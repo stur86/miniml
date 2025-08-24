@@ -59,7 +59,7 @@ class MiniMLParam:
         i1 = i0 + self.size
         if buf.ndim != 1:
             raise MiniMLError("Buffer must be 1-dimensional")
-        if i1 >= len(buf):
+        if i1 > len(buf):
             raise MiniMLError(f"Buffer is too small for parameter of shape {self.shape} counting from index {i0}")
         v = buf[i0:i1].reshape(self.shape)
         v.flags.writeable = False
