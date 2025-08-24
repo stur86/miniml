@@ -2,28 +2,15 @@ import numpy as np
 from pathlib import Path
 from numpy.typing import NDArray
 from numpy.typing import DTypeLike
-from miniml.param import MiniMLParam, MiniMLError
+from miniml.param import MiniMLParam, MiniMLError, _supported_types
 
-_save_type_keys = {
-    np.float32: "float32",
-    np.float64: "float64",
-    np.int32: "int32",
-    np.int64: "int64",
-    np.uint32: "uint32",
-    np.uint64: "uint64",
-    np.bool_: "bool",
-    np.complex64: "complex64",
-    np.complex128: "complex128",
-}
-
-_load_type_keys = {
-    v: k for k, v in _save_type_keys.items()
-}
 
 class MiniMLModel:
     
-    _buffers: dict[DTypeLike, NDArray]
-    _params: dict[DTypeLike, list[MiniMLParam]]
+    _dtype: DTypeLike
+    _dtype_name: str
+    _buffer: NDArray
+    _params: list[MiniMLParam]
     
     def __init__(self) -> None:
         
@@ -38,29 +25,47 @@ class MiniMLModel:
         pfound = sorted(pfound, key=lambda kv: kv[0])
         mfound = sorted(mfound, key=lambda kv: kv[0])
 
-        self._params = {}
+        dtype: DTypeLike = None
+        self._params = []
         for _, v in pfound:
-            try:
-                self._params.setdefault(v.dtype, []).append(v)
-            except TypeError:
-                raise MiniMLError("Parameters with a non-hashable dtype are not supported")
+            if dtype is None:
+                dtype = v.dtype
+            else:
+                if (v.dtype != dtype):
+                    raise MiniMLError("All parameters in a model must have the same dtype")
+            self._params.append(v)
             
         # Now merge in all parameters from the child models
         for k, m in mfound:
+            if dtype is None:
+                dtype = m._dtype
+            else:
+                if (m._dtype != dtype):
+                    raise MiniMLError("All parameters in a model must have the same dtype")
             try:
                 mp = m._params
             except AttributeError:
                 raise MiniMLError(f"Child model {k} was not properly initialized; remember to call super().__init__() at the end of the constructor")
-            for dt, plist in mp.items():
-                self._params.setdefault(dt, []).extend(plist)
-                
+            self._params.extend(mp)
+            
+        self._dtype = dtype
+        self._dtype_name = _supported_types.get_inverse(dtype)  # type: ignore
+
     @property
     def bound(self) -> bool:
-        return hasattr(self, "_buffers")
+        return hasattr(self, "_buffer")
     
     @property
     def ready(self) -> bool:
         return hasattr(self, "_params") and self.bound
+    
+    @property
+    def dtype(self) -> DTypeLike:
+        return self._dtype
+    
+    @property
+    def dtype_name(self) -> str:
+        return self._dtype_name
 
     def bind(self) -> None:
         if not hasattr(self, "_params"):
@@ -68,16 +73,15 @@ class MiniMLModel:
 
         if not self.bound:
             # Calculate total size
-            total_sizes = {dt: sum(p.size for p in plist) for dt, plist in self._params.items()}
+            total_size = sum(p.size for p in self._params)
             # Initialize buffers
-            self._buffers = {dt: np.empty((sz,), dtype=dt) for dt, sz in total_sizes.items()}
+            self._buffer = np.empty(total_size, dtype=self._dtype)
 
         # Bind buffers to parameters
-        for dt, plist in self._params.items():
-            i0 = 0
-            for p in plist:
-                p.bind(i0, self._buffers[dt])
-                i0 += p.size
+        i0 = 0
+        for p in self._params:
+            p.bind(i0, self._buffer)
+            i0 += p.size
     
     def randomize(self, seed: int | None = None) -> None:
         """Randomize the parameters of the model.
@@ -88,18 +92,19 @@ class MiniMLModel:
         if not self.bound:
             self.bind()
         rng = np.random.default_rng(seed)
-        for buf in self._buffers.values():
-            if buf.dtype.kind == "f":
-                buf[:] = rng.standard_normal(buf.shape, dtype=buf.dtype)
-            elif buf.dtype.kind in ("i", "u"):
-                buf[:] = rng.integers(0, 100, size=buf.shape, dtype=buf.dtype)
-            elif buf.dtype.kind == "b":
-                buf[:] = rng.integers(0, 2, size=buf.shape, dtype=buf.dtype)
-            elif buf.dtype.kind == "c":
-                ftype = np.float32 if buf.dtype == np.complex64 else np.float64
-                buf[:] = rng.standard_normal(buf.shape, dtype=ftype) + 1.0j * rng.standard_normal(buf.shape, dtype=ftype)
-            else:
-                raise MiniMLError(f"Randomization of parameters with dtype {buf.dtype} not supported")
+        if self._buffer.dtype.kind == "f":
+            self._buffer[:] = rng.standard_normal(self._buffer.shape, dtype=self._buffer.dtype)
+        elif self._buffer.dtype.kind == "c":
+            ftype = {
+                "complex64": np.float32,
+                "complex128": np.float64,
+                "complex256": np.float128,
+            }[self._buffer.dtype.name]
+            re = rng.standard_normal(self._buffer.shape, dtype=ftype)
+            im = rng.standard_normal(self._buffer.shape, dtype=ftype)
+            self._buffer[:] = re + 1.0j * im
+        else:
+            raise MiniMLError(f"Randomization of parameters with dtype {self._buffer.dtype} not supported")
             
     def save(self, filename: str | Path) -> None:
         """Save the model parameters to a file.
@@ -110,17 +115,7 @@ class MiniMLModel:
         if not self.bound:
             raise MiniMLError("Model parameters have not been bound to buffers; can not save")
         
-        save_dict: dict[str, NDArray] = {}
-        for dt, buf in self._buffers.items():
-            try:
-                k = _save_type_keys[dt]
-            except KeyError:
-                raise MiniMLError(f"Parameters with dtype {dt} can not be saved")
-            if k in save_dict:
-                raise MiniMLError(f"Multiple parameter buffers with dtype {dt} can not be saved")
-            save_dict[k] = buf
-
-        np.savez_compressed(filename, **save_dict) # type: ignore
+        np.savez_compressed(filename, buffer=self._buffer) # type: ignore
         
     def load(self, filename: str | Path) -> None:
         """Load the model parameters from a file.
@@ -132,16 +127,7 @@ class MiniMLModel:
             self.bind()
         
         load_dict = np.load(filename)
-        for k, buf in load_dict.items():
-            try:
-                dt = _load_type_keys[k]
-            except KeyError:
-                raise MiniMLError(f"Parameters with dtype key {k} can not be loaded")
-            try:
-                mybuf = self._buffers[dt]
-            except KeyError:
-                raise MiniMLError(f"No parameters with dtype {dt} in model; can not load")
-            if mybuf.shape != buf.shape:
-                raise MiniMLError(f"Parameter buffer shape mismatch for dtype {dt}: model has {mybuf.shape}, file has {buf.shape}")
-            mybuf[:] = buf
-        
+        buf = load_dict["buffer"]
+        if self._dtype != buf.dtype:
+            raise MiniMLError(f"Parameter buffer dtype mismatch: model has {self._dtype}, file has {buf.dtype}")
+        self._buffer[:] = buf 

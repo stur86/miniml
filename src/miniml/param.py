@@ -1,45 +1,65 @@
 import numpy as np
 from numpy.typing import DTypeLike, NDArray
+from miniml.utils import ImmutableBiDict
 
 class MiniMLError(Exception):
     pass
 
+_supported_types = ImmutableBiDict([
+    ("float16", np.float16),
+    ("float32", np.float32),
+    ("float64", np.float64),
+    ("float128", np.float128),
+    ("complex64", np.complex64),
+    ("complex128", np.complex128),
+    ("complex256", np.complex256),
+])
+
 class MiniMLParam:
-    """MiniML Parameter
-    """
-    
-    _shape: tuple[int,...]
+    """MiniML Parameter"""
+
+    _shape: tuple[int, ...]
     _dtype: DTypeLike
+    _dtype_name: str
     _size: int
 
     _buf: NDArray
-    
-    def __init__(self, shape: tuple[int,...], dtype: DTypeLike = np.float32) -> None:
+
+    def __init__(self, shape: tuple[int, ...], dtype: DTypeLike = np.float32) -> None:
         """Construct a MiniML Parameter
 
         Args:
             shape (tuple[int,...]): The shape of the parameter.
             dtype (DTypeLike, optional): The data type of the parameter. Defaults to np.float32.
         """
+        if dtype not in _supported_types.values():
+            raise MiniMLError(f"Parameter dtype {dtype} not supported")
+        
         self._shape = shape
         self._dtype = dtype
+        self._dtype_name = _supported_types.get_inverse(dtype)  # type: ignore
         self._size = int(np.prod(shape))
-            
+
     @property
-    def shape(self) -> tuple[int,...]:
+    def shape(self) -> tuple[int, ...]:
         """The shape of the parameter."""
         return self._shape
-    
+
     @property
     def size(self) -> int:
         """The size of the parameter."""
         return self._size
-    
+
     @property
     def dtype(self) -> DTypeLike:
         """The data type of the parameter."""
         return self._dtype
     
+    @property
+    def dtype_name(self) -> str:
+        """The name of the data type of the parameter."""
+        return self._dtype_name
+
     def bind(self, i0: int, buf: NDArray) -> None:
         """Bind the parameter to a buffer.
 
@@ -55,29 +75,30 @@ class MiniMLParam:
 
         if self.bound:
             raise MiniMLError("Parameter already bound to buffer")
-        
+
         i1 = i0 + self.size
         if buf.ndim != 1:
             raise MiniMLError("Buffer must be 1-dimensional")
         if i1 > len(buf):
-            raise MiniMLError(f"Buffer is too small for parameter of shape {self.shape} counting from index {i0}")
+            raise MiniMLError(
+                f"Buffer is too small for parameter of shape {self.shape} counting from index {i0}"
+            )
         v = buf[i0:i1].reshape(self.shape)
         v.flags.writeable = False
         self._buf = v
-        
+
     def unbind(self) -> None:
         del self._buf
-        
+
     @property
     def bound(self) -> bool:
         return hasattr(self, "_buf")
-    
+
     @property
     def value(self) -> NDArray:
         if not self.bound:
             raise MiniMLError("Parameter not bound to buffer")
         return self._buf
-        
+
     def __repr__(self) -> str:
         return f"MiniMLParam[{self.dtype}] ({self.shape})"
-    

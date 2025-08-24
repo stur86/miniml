@@ -14,3 +14,6 @@ def test_immut_bidict():
     assert ibidict.get("three", 3) == 3
     assert ibidict.get_inverse(1) == "one"
     assert ibidict.get_inverse(3) is None
+
+    assert sorted(ibidict.keys()) == ["one", "two"]
+    assert sorted(ibidict.values()) == [1, 2]

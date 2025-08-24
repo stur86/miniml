@@ -7,6 +7,7 @@ def test_param():
     assert p.shape == (3, 2)
     assert p.size == 6
     assert p.dtype == np.float32
+    assert p.dtype_name == "float32"
     
     # Try binding
     buf = np.arange(10, dtype=np.float32)
@@ -21,6 +22,10 @@ def test_param():
     assert np.array_equal(p.value, buf[2:8].reshape((3, 2)))
     
 def test_param_errors():
+    
+    with pytest.raises(MiniMLError, match="Parameter dtype .* not supported"):
+        MiniMLParam((3, 2), np.int32)
+
     p = MiniMLParam((3, 2), np.float32)
     buf = np.arange(10, dtype=np.float32)
 
