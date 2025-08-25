@@ -1,18 +1,35 @@
 import numpy as np
 from pathlib import Path
-from numpy.typing import NDArray
+import time
+import jax
+from jax import Array as JXArray
+import jax.numpy as jnp
 from numpy.typing import DTypeLike
 from miniml.param import MiniMLParam, MiniMLError, _supported_types
-
+from miniml.loss import LossFunction, squared_error_loss
 
 class MiniMLModel:
     
     _dtype: DTypeLike
     _dtype_name: str
-    _buffer: NDArray
+    _buffer: JXArray
     _params: list[MiniMLParam]
+    _models: list["MiniMLModel"]
+    _loss_f: LossFunction | None = None
     
-    def __init__(self) -> None:
+    def __init__(self, loss: LossFunction = squared_error_loss) -> None:
+        """Construct a MiniML Model
+
+        Args:
+            loss (LossFunction, optional): The loss function to use. Defaults to squared_error_loss.
+
+        Raises:
+            MiniMLError: If the model parameters are not properly initialized.
+            MiniMLError: If a child model is not properly initialized.
+            MiniMLError: If a child model is not bound to a buffer.
+        """
+        
+        self._loss_f = loss
         
         # Scan self for parameters
         pfound: list[tuple[str, MiniMLParam]] = []
@@ -36,17 +53,19 @@ class MiniMLModel:
             self._params.append(v)
             
         # Now merge in all parameters from the child models
+        self._models = []
         for k, m in mfound:
-            if dtype is None:
-                dtype = m._dtype
-            else:
-                if (m._dtype != dtype):
-                    raise MiniMLError("All parameters in a model must have the same dtype")
             try:
                 mp = m._params
+                if dtype is None:
+                    dtype = m._dtype
+                else:
+                    if (m._dtype != dtype):
+                        raise MiniMLError("All parameters in a model must have the same dtype")
             except AttributeError:
                 raise MiniMLError(f"Child model {k} was not properly initialized; remember to call super().__init__() at the end of the constructor")
             self._params.extend(mp)
+            self._models.append(m)
             
         self._dtype = dtype
         self._dtype_name = _supported_types.get_inverse(dtype)  # type: ignore
@@ -75,37 +94,60 @@ class MiniMLModel:
             # Calculate total size
             total_size = sum(p.size for p in self._params)
             # Initialize buffers
-            self._buffer = np.empty(total_size, dtype=self._dtype)
+            self._buffer = jnp.empty(total_size, dtype=jnp.dtype(self._dtype))
 
         # Bind buffers to parameters
         i0 = 0
         for p in self._params:
-            p.bind(i0, self._buffer)
+            p.bind(i0, self)
             i0 += p.size
     
     def randomize(self, seed: int | None = None) -> None:
-        """Randomize the parameters of the model.
+        """Randomize the parameters of the model using JAX random generators.
 
         Args:
             seed (int | None, optional): The random seed. Defaults to None.
         """
         if not self.bound:
             self.bind()
-        rng = np.random.default_rng(seed)
-        if self._buffer.dtype.kind == "f":
-            self._buffer[:] = rng.standard_normal(self._buffer.shape, dtype=self._buffer.dtype)
-        elif self._buffer.dtype.kind == "c":
+        key = jax.random.key(seed or time.time_ns() % (2**31 - 1))
+        shape = self._buffer.shape
+        dtype = self._buffer.dtype
+        if dtype.kind == "f":
+            vals = jax.random.normal(key, shape, dtype=dtype)
+            self._buffer = vals
+        elif dtype.kind == "c":
+            # JAX does not support complex dtypes directly in random.normal, so handle manually
             ftype = {
-                "complex64": np.float32,
-                "complex128": np.float64,
-                "complex256": np.float128,
-            }[self._buffer.dtype.name]
-            re = rng.standard_normal(self._buffer.shape, dtype=ftype)
-            im = rng.standard_normal(self._buffer.shape, dtype=ftype)
-            self._buffer[:] = re + 1.0j * im
+                "complex64": jnp.float32,
+                "complex128": jnp.float64,
+            }.get(dtype.name)
+            if ftype is None:
+                raise MiniMLError(f"Randomization of parameters with dtype {dtype} not supported")
+            re = jax.random.normal(key, shape, dtype=ftype)
+            # Use a new key for imaginary part
+            key2 = jax.random.split(key)[1]
+            im = jax.random.normal(key2, shape, dtype=ftype)
+            self._buffer = re + 1.0j * im
         else:
-            raise MiniMLError(f"Randomization of parameters with dtype {self._buffer.dtype} not supported")
-            
+            raise MiniMLError(f"Randomization of parameters with dtype {dtype} not supported")
+        
+    def loss(self, y_true: JXArray, y_pred: JXArray) -> JXArray:
+        if self._loss_f is None:
+            return jnp.array(0.0, dtype=jnp.dtype(self._dtype))
+        return self._loss_f(y_true, y_pred)
+
+    def regularization_loss(self) -> JXArray:
+        reg_loss = jnp.array(0.0, dtype=jnp.dtype(self._dtype))
+        for p in self._params:
+            reg_loss += p.regularization_loss()
+        for m in self._models:
+            reg_loss += m.regularization_loss()
+        return reg_loss
+
+    def total_loss(self, y_true: JXArray, y_pred: JXArray) -> JXArray:
+        return self.loss(y_true, y_pred) + self.regularization_loss()
+
     def save(self, filename: str | Path) -> None:
         """Save the model parameters to a file.
 
@@ -130,4 +172,4 @@ class MiniMLModel:
         buf = load_dict["buffer"]
         if self._dtype != buf.dtype:
             raise MiniMLError(f"Parameter buffer dtype mismatch: model has {self._dtype}, file has {buf.dtype}")
-        self._buffer[:] = buf 
+        self._buffer = jnp.array(buf)

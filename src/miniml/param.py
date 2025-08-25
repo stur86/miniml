@@ -1,5 +1,6 @@
 import numpy as np
-from jax import Array
+from jax import Array as JXArray
+import jax.numpy as jnp
 from typing import Protocol
 from numpy.typing import DTypeLike
 from miniml.utils import ImmutableBiDict
@@ -9,17 +10,15 @@ class MiniMLError(Exception):
     pass
 
 _supported_types = ImmutableBiDict([
-    ("float16", np.float16),
-    ("float32", np.float32),
-    ("float64", np.float64),
-    ("float128", np.float128),
-    ("complex64", np.complex64),
-    ("complex128", np.complex128),
-    ("complex256", np.complex256),
+    ("float16", jnp.float16),
+    ("float32", jnp.float32),
+    ("float64", jnp.float64),
+    ("complex64", jnp.complex64),
+    ("complex128", jnp.complex128),
 ])
 
 class BufferContainer(Protocol):
-    _buffer: Array
+    _buffer: JXArray
 
 class MiniMLParam:
     """MiniML Parameter"""
@@ -101,9 +100,9 @@ class MiniMLParam:
         self._bufc = bufc
         self._buf_i0 = i0
 
-    def regularization_loss(self) -> float:
+    def regularization_loss(self) -> JXArray:
         if self._reg_loss is None:
-            return 0.0
+            return jnp.array(0.0, dtype=jnp.dtype(self._dtype))
         return self._reg_loss(self.value)
 
     def unbind(self) -> None:
@@ -114,7 +113,7 @@ class MiniMLParam:
         return self._bufc is not None
 
     @property
-    def value(self) -> Array:
+    def value(self) -> JXArray:
         i0 = self._buf_i0
         i1 = i0 + self.size
         if self._bufc is None:
