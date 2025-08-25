@@ -1,6 +1,7 @@
 import numpy as np
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Any
 import time
 import jax
 from jax import Array as JXArray
@@ -154,7 +155,8 @@ class MiniMLModel(ABC):
     def predict(self, X: JXArray) -> JXArray:
         pass
 
-    def fit(self, X: JXArray, y: JXArray, reg_lambda: float = 1.0) -> None:
+    def fit(self, X: JXArray, y: JXArray, reg_lambda: float = 1.0, 
+            fit_args: dict[str, Any] = {"method": "L-BFGS-B"}) -> None:
         if not self.bound:
             self.bind()
             
@@ -165,7 +167,7 @@ class MiniMLModel(ABC):
         
         _targ_fun_opt = jax.jit(jax.value_and_grad(_targ_fun))
         
-        sol = minimize(_targ_fun_opt, self._buffer, method="L-BFGS-B", jac=True)
+        sol = minimize(_targ_fun_opt, self._buffer, jac=True, **fit_args)
         self._buffer = jnp.array(sol.x, dtype=jnp.dtype(self._dtype))
 
     def save(self, filename: str | Path) -> None:
