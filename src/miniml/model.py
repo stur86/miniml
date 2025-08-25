@@ -12,6 +12,16 @@ from miniml.loss import LossFunction, squared_error_loss
 from scipy.optimize import minimize
 
 class MiniMLModel(ABC):
+    """MiniML Model
+    
+    Base for any MiniML model. It should be subclassed as follows:
+    
+    * the constructor must declare all MiniMLParam and MiniMLModels
+      directly as members of the MiniMLModel object;
+    * the super() constructor must be called at the end;
+    * the predict() method must be implemented.
+    
+    """
     
     _dtype: DTypeLike
     _dtype_name: str
@@ -21,7 +31,7 @@ class MiniMLModel(ABC):
     _loss_f: LossFunction | None = None
     
     def __init__(self, loss: LossFunction = squared_error_loss) -> None:
-        """Construct a MiniML Model
+        """Construct a MiniML Model.
 
         Args:
             loss (LossFunction, optional): The loss function to use. Defaults to squared_error_loss.
@@ -75,21 +85,42 @@ class MiniMLModel(ABC):
 
     @property
     def bound(self) -> bool:
+        """Check if the model parameters are bound to a buffer.
+
+        Returns:
+            bool: True if the model parameters are bound, False otherwise.
+        """
         return hasattr(self, "_buffer")
     
     @property
     def ready(self) -> bool:
+        """Check if the model parameters are initialized and bound.
+
+        Returns:
+            bool: True if parameters are initialized and bound, False otherwise.
+        """
         return hasattr(self, "_params") and self.bound
     
     @property
     def dtype(self) -> DTypeLike:
+        """Get the data type of the model parameters.
+
+        Returns:
+            DTypeLike: The data type of the parameters.
+        """
         return self._dtype
     
     @property
     def dtype_name(self) -> str:
+        """Get the name of the data type of the model parameters.
+
+        Returns:
+            str: The name of the data type.
+        """
         return self._dtype_name
 
     def bind(self) -> None:
+        """Bind the model parameters to a contiguous buffer."""
         if not hasattr(self, "_params"):
             raise MiniMLError("Model parameters have not been initialized; remember to call super().__init__() at the end of the constructor")
 
@@ -136,11 +167,25 @@ class MiniMLModel(ABC):
             raise MiniMLError(f"Randomization of parameters with dtype {dtype} not supported")
         
     def loss(self, y_true: JXArray, y_pred: JXArray) -> JXArray:
+        """Compute the loss between true and predicted values using the model's loss function.
+
+        Args:
+            y_true (JXArray): Ground truth values.
+            y_pred (JXArray): Predicted values.
+
+        Returns:
+            JXArray: The computed loss.
+        """
         if self._loss_f is None:
             return jnp.array(0.0, dtype=jnp.dtype(self._dtype))
         return self._loss_f(y_true, y_pred)
 
     def regularization_loss(self) -> JXArray:
+        """Compute the total regularization loss for all parameters and child models.
+
+        Returns:
+            JXArray: The total regularization loss.
+        """
         reg_loss = jnp.array(0.0, dtype=jnp.dtype(self._dtype))
         for p in self._params:
             reg_loss += p.regularization_loss()
@@ -149,6 +194,16 @@ class MiniMLModel(ABC):
         return reg_loss
 
     def total_loss(self, y_true: JXArray, y_pred: JXArray, reg_lambda: float = 1.0) -> JXArray:
+        """Compute the total loss as the sum of prediction loss and regularization loss.
+
+        Args:
+            y_true (JXArray): Ground truth values.
+            y_pred (JXArray): Predicted values.
+            reg_lambda (float, optional): Regularization strength. Defaults to 1.0.
+
+        Returns:
+            JXArray: The total loss.
+        """
         return self.loss(y_true, y_pred) + reg_lambda * self.regularization_loss()
 
     @abstractmethod
@@ -157,6 +212,16 @@ class MiniMLModel(ABC):
 
     def fit(self, X: JXArray, y: JXArray, reg_lambda: float = 1.0, 
             fit_args: dict[str, Any] = {"method": "L-BFGS-B"}) -> None:
+        """Fit the model parameters to the data by minimizing the total loss.
+
+        Args:
+            X (JXArray): Input features.
+            y (JXArray): Target values.
+            reg_lambda (float, optional): Regularization strength. Defaults to 1.0.
+            fit_args (dict[str, Any], optional): Arguments for the optimizer.
+                Refer to the documentation for scipy.minimize for details.
+                Defaults to {"method": "L-BFGS-B"}.
+        """
         if not self.bound:
             self.bind()
             
