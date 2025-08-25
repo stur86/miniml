@@ -101,19 +101,27 @@ class MiniMLParam:
         self._buf_i0 = i0
 
     def regularization_loss(self) -> JXArray:
+        """Returns the regularization loss for this parameter
+
+        Returns:
+            JXArray: Regularization loss, should be a scalar
+        """
         if self._reg_loss is None:
             return jnp.array(0.0, dtype=jnp.dtype(self._dtype))
         return self._reg_loss(self.value)
 
     def unbind(self) -> None:
+        """Unbind this parameter from its buffer container."""
         self._bufc = None
         
     @property
     def bound(self) -> bool:
+        """Whether the parameter is bound to a buffer."""
         return self._bufc is not None
 
     @property
     def value(self) -> JXArray:
+        """Tensor value of the parameter"""
         i0 = self._buf_i0
         i1 = i0 + self.size
         if self._bufc is None:
