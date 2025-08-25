@@ -20,3 +20,8 @@ build-backend = "uv_build"
 dev = [
     "pytest>=8.4.1",
 ]
+examples = [
+    "marimo>=0.15.0",
+    "matplotlib>=3.10.5",
+    "seaborn>=0.13.2",
+]
