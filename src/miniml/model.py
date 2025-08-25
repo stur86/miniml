@@ -147,20 +147,20 @@ class MiniMLModel(ABC):
             reg_loss += m.regularization_loss()
         return reg_loss
 
-    def total_loss(self, y_true: JXArray, y_pred: JXArray) -> JXArray:
-        return self.loss(y_true, y_pred) + self.regularization_loss()
-    
+    def total_loss(self, y_true: JXArray, y_pred: JXArray, reg_lambda: float = 1.0) -> JXArray:
+        return self.loss(y_true, y_pred) + reg_lambda * self.regularization_loss()
+
     @abstractmethod
     def predict(self, X: JXArray) -> JXArray:
         pass
 
-    def fit(self, X: JXArray, y: JXArray) -> None:
+    def fit(self, X: JXArray, y: JXArray, reg_lambda: float = 1.0) -> None:
         if not self.bound:
             self.bind()
             
         def _targ_fun(p: JXArray) -> JXArray:
             self._buffer = p
-            loss = self.total_loss(y, self.predict(X))
+            loss = self.total_loss(y, self.predict(X), reg_lambda)
             return loss
         
         _targ_fun_opt = jax.jit(jax.value_and_grad(_targ_fun))

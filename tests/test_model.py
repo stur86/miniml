@@ -182,8 +182,8 @@ def test_linear_model_fit_with_l2_reg():
     # Fit y = a*x + b, with L2 regularization on a
     from miniml.loss import l2_regularization
     class LinearModel(MiniMLModel):
-        def __init__(self, reg_lambda=1.0):
-            self.a = MiniMLParam((1,), reg_loss=lambda x: reg_lambda * l2_regularization(x))
+        def __init__(self):
+            self.a = MiniMLParam((1,), reg_loss=l2_regularization)
             self.b = MiniMLParam((1,))
             super().__init__()
         def predict(self, X):
@@ -193,10 +193,10 @@ def test_linear_model_fit_with_l2_reg():
     X = jnp.linspace(0, 10, 20)
     y = 2 * X + 1
     reg_lambda = 10.0
-    model = LinearModel(reg_lambda=reg_lambda)
+    model = LinearModel()
     model.bind()
     model.randomize()
-    model.fit(X, y)
+    model.fit(X, y, reg_lambda=reg_lambda)
     a_fit, b_fit = model.a.value[0], model.b.value[0]
     # Analytical ridge regression solution for a: a = Sxy / (Sxx + lambda)
     Xc = X - X.mean()
