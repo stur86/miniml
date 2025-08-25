@@ -107,7 +107,7 @@ class MiniMLParam:
 
     def unbind(self) -> None:
         self._bufc = None
-
+        
     @property
     def bound(self) -> bool:
         return self._bufc is not None

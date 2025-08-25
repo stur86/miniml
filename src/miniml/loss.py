@@ -23,7 +23,7 @@ def cross_entropy_loss(y_true: JXArray, y_pred: JXArray) -> JXArray:
 
 def norm_regularization(y: JXArray, p: float) -> JXArray:
     """Compute the norm regularization term."""
-    return jnp.sum(jnp.abs(y) ** p)**(1.0/p)
+    return jnp.sum(jnp.abs(y) ** p)
 
 l2_regularization = partial(norm_regularization, p=2.0)
 l1_regularization = partial(norm_regularization, p=1.0)

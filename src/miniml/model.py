@@ -1,4 +1,5 @@
 import numpy as np
+from abc import ABC, abstractmethod
 from pathlib import Path
 import time
 import jax
@@ -7,8 +8,9 @@ import jax.numpy as jnp
 from numpy.typing import DTypeLike
 from miniml.param import MiniMLParam, MiniMLError, _supported_types
 from miniml.loss import LossFunction, squared_error_loss
+from scipy.optimize import minimize
 
-class MiniMLModel:
+class MiniMLModel(ABC):
     
     _dtype: DTypeLike
     _dtype_name: str
@@ -147,6 +149,24 @@ class MiniMLModel:
 
     def total_loss(self, y_true: JXArray, y_pred: JXArray) -> JXArray:
         return self.loss(y_true, y_pred) + self.regularization_loss()
+    
+    @abstractmethod
+    def predict(self, X: JXArray) -> JXArray:
+        pass
+
+    def fit(self, X: JXArray, y: JXArray) -> None:
+        if not self.bound:
+            self.bind()
+            
+        def _targ_fun(p: JXArray) -> JXArray:
+            self._buffer = p
+            loss = self.total_loss(y, self.predict(X))
+            return loss
+        
+        _targ_fun_opt = jax.jit(jax.value_and_grad(_targ_fun))
+        
+        sol = minimize(_targ_fun_opt, self._buffer, method="L-BFGS-B", jac=True)
+        self._buffer = jnp.array(sol.x, dtype=jnp.dtype(self._dtype))
 
     def save(self, filename: str | Path) -> None:
         """Save the model parameters to a file.
