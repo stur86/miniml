@@ -35,7 +35,7 @@ def _(jnp, np, plt, sns):
     X = jnp.array(rng.normal(size=(N,2)), dtype=jnp.float32)
     # Use a circular boundary for classification
     class_R = 1.2
-    _is_out = jnp.linalg.norm(X, axis=1) > class_R
+    _is_out = (jnp.linalg.norm(X, axis=1)+rng.normal(size=N, scale=0.3*class_R)) > class_R
     y = jnp.stack([~_is_out, _is_out], dtype=jnp.float32).T
 
     _fig, _ax = plt.subplots()
