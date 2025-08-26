@@ -6,7 +6,7 @@ import jax.numpy as jnp
 from jax import Array as JXArray
 from miniml.param import MiniMLParam, MiniMLError
 from miniml.model import MiniMLModel
-from miniml.loss import squared_error_loss, l2_regularization
+from miniml.loss import squared_error_loss, LNormRegularization
 
 
 def test_model(tmp_path: Path):
@@ -143,7 +143,7 @@ def test_squared_error_loss():
 def test_param_regularization_loss():
     from miniml.param import MiniMLParam
     # L2 regularization on a parameter
-    param = MiniMLParam((3,), reg_loss=l2_regularization, dtype=jnp.float32)
+    param = MiniMLParam((3,), reg_loss=LNormRegularization(), dtype=jnp.float32)
     class DummyModel:
         def __init__(self, buf):
             self._buffer = buf
@@ -180,10 +180,9 @@ def test_linear_model_fit_no_reg():
 
 def test_linear_model_fit_with_l2_reg():
     # Fit y = a*x + b, with L2 regularization on a
-    from miniml.loss import l2_regularization
     class LinearModel(MiniMLModel):
         def __init__(self):
-            self.a = MiniMLParam((1,), reg_loss=l2_regularization)
+            self.a = MiniMLParam((1,), reg_loss=LNormRegularization())
             self.b = MiniMLParam((1,))
             super().__init__()
         def predict(self, X):
