@@ -7,6 +7,7 @@ from miniml.utils import ImmutableBiDict
 from miniml.loss import RegLossFunction
 
 class MiniMLError(Exception):
+    """Class for errors raised by MiniML"""
     pass
 
 _supported_types = ImmutableBiDict([

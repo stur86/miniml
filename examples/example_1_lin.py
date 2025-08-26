@@ -40,19 +40,18 @@ def _(A, MiniMLModel, MiniMLParam, X, b, mo, y):
         A: MiniMLParam
         b: MiniMLParam
 
-        def __init__(self, n_in: int):
-            self.A = MiniMLParam((2,1))
-            self.b = MiniMLParam((1,))
+        def __init__(self, n_in: int, n_out: int):
+            self.A = MiniMLParam((n_in,n_out))
+            self.b = MiniMLParam((n_out,))
             super().__init__()
 
         def predict(self, X):
             return X@self.A.value+self.b.value
 
-    lin_model = LinearModel(X.shape[1])
+    lin_model = LinearModel(X.shape[1], y.shape[1])
     lin_model.randomize()
     lin_model.fit(X, y)
     y_hat = lin_model.predict(X)
-
 
     mo.md(f"""
 
