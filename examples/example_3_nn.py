@@ -12,17 +12,8 @@ def _():
     from miniml import MiniMLParam, MiniMLParamList, MiniMLModel
     from miniml.loss import LNormRegularization, CrossEntropyLogLoss
     from ucimlrepo import fetch_ucirepo 
-    return (
-        CrossEntropyLogLoss,
-        LNormRegularization,
-        MiniMLModel,
-        MiniMLParam,
-        MiniMLParamList,
-        fetch_ucirepo,
-        jnp,
-        mo,
-        np,
-    )
+    from miniml.nn.mlp import MLP
+    return MLP, fetch_ucirepo, jnp, mo, np
 
 
 @app.cell
@@ -60,43 +51,10 @@ def _(iris_X, iris_y, jnp, np):
 
 
 @app.cell
-def _(
-    CrossEntropyLogLoss,
-    LNormRegularization,
-    MiniMLModel,
-    MiniMLParam,
-    MiniMLParamList,
-    jnp,
-):
+def _(MLP, np, train_X, train_y):
     _n_hidden = 10
 
-    def relu(y):
-        return jnp.where(y > 0, y, 0)
-
-    class NNModel(MiniMLModel):
-
-        def __init__(self):
-            self._layers = MiniMLParamList([
-                MiniMLParam((4, _n_hidden), reg_loss=LNormRegularization()),
-                MiniMLParam((_n_hidden,)),
-                MiniMLParam((_n_hidden, 3), reg_loss=LNormRegularization()),
-                MiniMLParam((3,)),
-            ])
-
-            super().__init__(loss=CrossEntropyLogLoss(zero_ref=False))
-
-        def predict(self, X):
-            y = X@self._layers[0].value+self._layers[1].value
-            y = relu(y)
-            y = y@self._layers[2].value+self._layers[3].value
-
-            return y
-    return (NNModel,)
-
-
-@app.cell
-def _(NNModel, np, train_X, train_y):
-    nnm = NNModel()
+    nnm = MLP([4, _n_hidden, 3])
     nnm.randomize()
     nnm.fit(train_X, train_y, reg_lambda=0.5)
 
@@ -107,17 +65,14 @@ def _(NNModel, np, train_X, train_y):
 
 @app.cell
 def _(classification_accuracy, mo, nnm, test_X, test_y, train_X, train_y):
-    mo.md(f"""
+    mo.md(
+        f"""
     | Set       |               Accuracy                                       |
     |-----------|--------------------------------------------------------------|
     | **Train** | {classification_accuracy(train_y, nnm.predict(train_X)):.2%} |
     | **Test**  |  {classification_accuracy(test_y, nnm.predict(test_X)):.2%}  |
-    """)
-    return
-
-
-@app.cell
-def _():
+    """
+    )
     return
 
 
