@@ -22,8 +22,8 @@ def _(fetch_ucirepo):
     iris = fetch_ucirepo(id=53) 
 
     # data (as pandas dataframes) 
-    iris_X = iris.data.features 
-    iris_y = iris.data.targets 
+    iris_X = iris.data.features
+    iris_y = iris.data.targets
     return iris_X, iris_y
 
 
@@ -52,6 +52,7 @@ def _(iris_X, iris_y, jnp, np):
 
 @app.cell
 def _(MLP, np, train_X, train_y):
+    # Train a MLP with a single hidden layer
     _n_hidden = 10
 
     nnm = MLP([4, _n_hidden, 3])
