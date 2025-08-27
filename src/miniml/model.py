@@ -59,14 +59,8 @@ class MiniMLModel(ABC):
         plsfound = sorted(plsfound, key=lambda kv: kv[0])
         mfound = sorted(mfound, key=lambda kv: kv[0])
 
-        dtype: DTypeLike = None
         self._params = []
         for _, v in pfound:
-            if dtype is None:
-                dtype = v.dtype
-            else:
-                if (v.dtype != dtype):
-                    raise MiniMLError("All parameters in a model must have the same dtype")
             self._params.append(v)
         for _, v in plsfound:
             self._params.extend(v.contents)
@@ -76,16 +70,19 @@ class MiniMLModel(ABC):
         for k, m in mfound:
             try:
                 mp = m._params
-                if dtype is None:
-                    dtype = m._dtype
-                else:
-                    if (m._dtype != dtype):
-                        raise MiniMLError("All parameters in a model must have the same dtype")
             except AttributeError:
                 raise MiniMLError(f"Child model {k} was not properly initialized; remember to call super().__init__() at the end of the constructor")
             self._params.extend(mp)
             self._models.append(m)
             
+        # Scan for dtype consistency
+        dtype: DTypeLike = None
+        for p in self._params:
+            if dtype is None:
+                dtype = p.dtype
+            elif dtype != p.dtype:
+                raise MiniMLError(f"Model parameter dtype mismatch: found {dtype} and {p.dtype}")
+                    
         self._dtype = dtype
         self._dtype_name = _supported_types.get_inverse(dtype)  # type: ignore
 
