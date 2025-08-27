@@ -1,7 +1,7 @@
 import pytest
 import jax.numpy as jnp
 import numpy as np
-from miniml.param import MiniMLError, MiniMLParam
+from miniml.param import MiniMLError, MiniMLParam, MiniMLParamList
 
 class MockContainer:
     _buffer: jnp.ndarray
@@ -53,3 +53,21 @@ def test_param_errors():
     
     with pytest.raises(MiniMLError, match="Parameter not bound to buffer"):
         _ = p.value
+        
+def test_param_regularization():
+    p = MiniMLParam((3, 2), reg_loss=lambda x: jnp.sum(x**2))
+    
+    bufc = MockContainer()
+    p.bind(0, bufc)
+    bufc._buffer = jnp.arange(10, dtype=jnp.float32)
+    assert np.isclose(p.regularization_loss(), jnp.sum(bufc._buffer[0:6]**2))
+        
+def test_param_list():
+    p1 = MiniMLParam((5,2))
+    p2 = MiniMLParam((10,))
+    
+    plist = MiniMLParamList([p1, p2])
+    
+    assert plist.contents == [p1, p2]
+    assert len(plist) == 2
+    assert plist[0] == p1

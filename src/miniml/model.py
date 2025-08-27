@@ -7,7 +7,7 @@ import jax
 from jax import Array as JXArray
 import jax.numpy as jnp
 from numpy.typing import DTypeLike
-from miniml.param import MiniMLParam, MiniMLError, _supported_types
+from miniml.param import MiniMLParam, MiniMLParamList, MiniMLError, _supported_types
 from miniml.loss import LossFunction, squared_error_loss
 from scipy.optimize import minimize
 
@@ -46,13 +46,17 @@ class MiniMLModel(ABC):
         
         # Scan self for parameters
         pfound: list[tuple[str, MiniMLParam]] = []
+        plsfound: list[tuple[str, MiniMLParamList]] = []
         mfound: list[tuple[str, MiniMLModel]] = []
         for k, v in self.__dict__.items():
             if isinstance(v, MiniMLParam):
                 pfound.append((k, v))
+            elif isinstance(v, MiniMLParamList):
+                plsfound.append((k, v))
             elif isinstance(v, MiniMLModel):
                 mfound.append((k, v))
         pfound = sorted(pfound, key=lambda kv: kv[0])
+        plsfound = sorted(plsfound, key=lambda kv: kv[0])
         mfound = sorted(mfound, key=lambda kv: kv[0])
 
         dtype: DTypeLike = None
@@ -64,7 +68,9 @@ class MiniMLModel(ABC):
                 if (v.dtype != dtype):
                     raise MiniMLError("All parameters in a model must have the same dtype")
             self._params.append(v)
-            
+        for _, v in plsfound:
+            self._params.extend(v.contents)
+
         # Now merge in all parameters from the child models
         self._models = []
         for k, m in mfound:

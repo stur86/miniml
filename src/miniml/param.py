@@ -131,3 +131,26 @@ class MiniMLParam:
 
     def __repr__(self) -> str:
         return f"MiniMLParam[{self.dtype}] ({self.shape})"
+
+class MiniMLParamList:
+    """A list of parameters"""
+    
+    _contents: list[MiniMLParam]
+
+    def __init__(self, contents: list[MiniMLParam]) -> None:
+        self._contents = contents
+        
+    @property
+    def contents(self) -> list[MiniMLParam]:
+        return self._contents
+    
+    @property
+    def regularization_loss(self) -> JXArray:
+        """Returns the regularization loss for all parameters in the list."""
+        return jnp.array([param.regularization_loss() for param in self._contents]).sum()
+
+    def __getitem__(self, index: int) -> MiniMLParam:
+        return self._contents[index]
+
+    def __len__(self) -> int:
+        return len(self._contents)
