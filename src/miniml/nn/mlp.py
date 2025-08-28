@@ -1,16 +1,22 @@
 from jax import Array as JXArray
 from miniml.model import MiniMLModel
 from miniml.loss import RegLossFunction, LNormRegularization
-from miniml.param import MiniMLParam, MiniMLError, MiniMLParamList, DTypeLike
+from miniml.param import MiniMLError, DTypeLike
 import jax.numpy as jnp
-from miniml.nn.activations import relu, ActivationFunction
+from miniml.nn.activations import relu, ActivationFunction, Activation
+from miniml.nn.linear import Linear
+from miniml.nn.stack import Stack
 
 
 class MLP(MiniMLModel):
-    
-    def __init__(self, layer_sizes: list[int], activation: ActivationFunction = relu, 
-                 reg_loss: RegLossFunction = LNormRegularization(2), 
-                 dtype: DTypeLike = jnp.float32) -> None:
+
+    def __init__(
+        self,
+        layer_sizes: list[int],
+        activation: ActivationFunction = relu,
+        reg_loss: RegLossFunction = LNormRegularization(2),
+        dtype: DTypeLike = jnp.float32,
+    ) -> None:
         """Multi-Layer Perceptron model.
 
         Args:
@@ -22,32 +28,31 @@ class MLP(MiniMLModel):
             reg_loss (RegLossFunction, optional): Regularization function for the layers.
                 Defaults to LNormRegularization(2).
         """
-        
-        
+
         if len(layer_sizes) < 2:
             raise MiniMLError("MLP must have at least two layers (input and output)")
-        
-        layers: list[MiniMLParam] = []
+
+        layers: list[MiniMLModel] = []
         self._n = len(layer_sizes) - 1
         for i in range(self._n):
             in_size, out_size = layer_sizes[i], layer_sizes[i + 1]
             if in_size <= 0 or out_size <= 0:
                 raise MiniMLError("Layer sizes must be positive integers")
-            layers.append(MiniMLParam((in_size, out_size), dtype, reg_loss=reg_loss))
-            layers.append(MiniMLParam((out_size,), dtype))
-        self._layers = MiniMLParamList(layers)
-        self._activation = activation
-        
-        super().__init__()
-        
-    def predict(self, X: JXArray) -> JXArray:
-        for i in range(self._n):
-            W = self._layers[2 * i].value
-            b = self._layers[2 * i + 1].value
-            X = X@W + b
+            layers.append(
+                Linear(
+                    in_size,
+                    out_size,
+                    reg_loss=reg_loss,
+                    dtype=dtype,
+                    apply_bias_reg=False,
+                )
+            )
             if i < self._n - 1:
-                X = self._activation(X)
-        return X
+                layers.append(Activation(activation))
 
-        
-        
+        self._layer_stack = Stack(layers)
+
+        super().__init__()
+
+    def predict(self, X: JXArray) -> JXArray:
+        return self._layer_stack.predict(X)

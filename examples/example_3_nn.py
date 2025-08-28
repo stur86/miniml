@@ -77,5 +77,10 @@ def _(classification_accuracy, mo, nnm, test_X, test_y, train_X, train_y):
     return
 
 
+@app.cell
+def _():
+    return
+
+
 if __name__ == "__main__":
     app.run()

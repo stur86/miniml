@@ -5,7 +5,7 @@ import pytest
 import jax.numpy as jnp
 from jax import Array as JXArray
 from miniml.param import MiniMLParam, MiniMLError
-from miniml.model import MiniMLModel
+from miniml.model import MiniMLModel, MiniMLModelList
 from miniml.loss import squared_error_loss, LNormRegularization
 
 
@@ -73,7 +73,7 @@ def test_dtype_mismatch():
         def predict(self, X: JXArray) -> JXArray:
             return super().predict(X)
 
-    with pytest.raises(MiniMLError, match="same dtype"):
+    with pytest.raises(MiniMLError, match="parameter dtype mismatch"):
         ModelA()
 
 
@@ -205,3 +205,28 @@ def test_linear_model_fit_with_l2_reg():
     b_analytical = y.mean() - a_analytical * X.mean()
     assert jnp.isclose(a_fit, a_analytical, atol=1e-2)
     assert jnp.isclose(b_fit, b_analytical, atol=1e-2)
+
+def test_model_list():
+    class M1(MiniMLModel):
+        def __init__(self):
+            self.p = MiniMLParam((1,))
+            super().__init__()
+        
+        def predict(self, X: JXArray) -> JXArray:
+            return super().predict(X)
+
+    class M2(MiniMLModel):
+        def __init__(self):
+            self.p = MiniMLParam((2,))
+            super().__init__()
+        
+        def predict(self, X: JXArray) -> JXArray:
+            return super().predict(X)
+
+    mlist = MiniMLModelList([M1(), M2()])
+    assert len(mlist._contents) == 2
+    assert isinstance(mlist._contents[0], M1)
+    assert isinstance(mlist._contents[1], M2)
+    assert len(mlist._get_inner_params()) == 2
+    assert mlist._get_inner_params()[0] == mlist._contents[0]._params[0]
+    assert mlist._get_inner_params()[1] == mlist._contents[1]._params[0]

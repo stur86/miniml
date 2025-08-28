@@ -1,15 +1,22 @@
 import numpy as np
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 import time
 import jax
 from jax import Array as JXArray
 import jax.numpy as jnp
 from numpy.typing import DTypeLike
-from miniml.param import MiniMLParam, MiniMLParamList, MiniMLError, _supported_types
+from miniml.param import MiniMLParam, MiniMLError, _supported_types
 from miniml.loss import LossFunction, squared_error_loss
 from scipy.optimize import minimize
+
+# Generic interface for something that has parameters
+@runtime_checkable
+class ParametrizedObject(Protocol):
+    
+    def _get_inner_params(self) -> list[MiniMLParam]:
+        ...
 
 class MiniMLModel(ABC):
     """MiniML Model
@@ -29,7 +36,7 @@ class MiniMLModel(ABC):
     _params: list[MiniMLParam]
     _loss_f: LossFunction | None = None
     
-    def __init__(self, loss: LossFunction = squared_error_loss) -> None:
+    def __init__(self, loss: LossFunction | None = squared_error_loss) -> None:
         """Construct a MiniML Model.
 
         Args:
@@ -44,28 +51,19 @@ class MiniMLModel(ABC):
         self._loss_f = loss
         
         # Scan self for parameters
-        pfound: list[tuple[str, MiniMLParam]] = []
-        plsfound: list[tuple[str, MiniMLParamList]] = []
-        mfound: list[tuple[str, MiniMLModel]] = []
+        pfound: list[tuple[str, ParametrizedObject]] = []
         for k, v in self.__dict__.items():
-            if isinstance(v, MiniMLParam):
+            if isinstance(v, ParametrizedObject):
                 pfound.append((k, v))
-            elif isinstance(v, MiniMLParamList):
-                plsfound.append((k, v))
-            elif isinstance(v, MiniMLModel):
-                mfound.append((k, v))
         pfound = sorted(pfound, key=lambda kv: kv[0])
-        plsfound = sorted(plsfound, key=lambda kv: kv[0])
-        mfound = sorted(mfound, key=lambda kv: kv[0])
 
         self._params = []
-        for _, v in pfound:
-            self._params.append(v)
-        for _, v in plsfound:
-            self._params.extend(v.contents)
-        for _, m in mfound:
-            self._params.extend(m._params)
-            
+        for k, v in pfound:
+            try:
+                self._params.extend(v._get_inner_params())
+            except Exception as e:
+                raise MiniMLError(f"Child member {k} was not properly initialized: {e}")
+
         # Scan for dtype consistency
         dtype: DTypeLike = None
         for p in self._params:
@@ -252,3 +250,27 @@ class MiniMLModel(ABC):
         if self._dtype != buf.dtype:
             raise MiniMLError(f"Parameter buffer dtype mismatch: model has {self._dtype}, file has {buf.dtype}")
         self._buffer = jnp.array(buf)
+        
+    def _get_inner_params(self) -> list[MiniMLParam]:
+        return self._params
+    
+class MiniMLModelList:
+    _contents: list[MiniMLModel]
+
+    def __init__(self, models: list[MiniMLModel]) -> None:
+        self._contents = models
+    
+    @property
+    def contents(self) -> list[MiniMLModel]:
+        return self._contents
+        
+    def __getitem__(self, i: int) -> MiniMLModel:
+        return self._contents[i]
+    
+    def __len__(self) -> int:
+        return len(self._contents)
+    
+    def _get_inner_params(self) -> list[MiniMLParam]:
+        return sum((m._get_inner_params() for m in self._contents), [])
+    
+    

@@ -71,3 +71,6 @@ def test_param_list():
     assert plist.contents == [p1, p2]
     assert len(plist) == 2
     assert plist[0] == p1
+    
+    for p in plist:
+        assert p in [p1, p2]

@@ -131,6 +131,9 @@ class MiniMLParam:
 
     def __repr__(self) -> str:
         return f"MiniMLParam[{self.dtype}] ({self.shape})"
+    
+    def _get_inner_params(self) -> list["MiniMLParam"]:
+        return [self]
 
 class MiniMLParamList:
     """A list of parameters"""
@@ -154,3 +157,6 @@ class MiniMLParamList:
 
     def __len__(self) -> int:
         return len(self._contents)
+    
+    def _get_inner_params(self) -> list[MiniMLParam]:
+        return self._contents
