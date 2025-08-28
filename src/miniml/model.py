@@ -27,7 +27,6 @@ class MiniMLModel(ABC):
     _dtype_name: str
     _buffer: JXArray
     _params: list[MiniMLParam]
-    _models: list["MiniMLModel"]
     _loss_f: LossFunction | None = None
     
     def __init__(self, loss: LossFunction = squared_error_loss) -> None:
@@ -64,16 +63,8 @@ class MiniMLModel(ABC):
             self._params.append(v)
         for _, v in plsfound:
             self._params.extend(v.contents)
-
-        # Now merge in all parameters from the child models
-        self._models = []
-        for k, m in mfound:
-            try:
-                mp = m._params
-            except AttributeError:
-                raise MiniMLError(f"Child model {k} was not properly initialized; remember to call super().__init__() at the end of the constructor")
-            self._params.extend(mp)
-            self._models.append(m)
+        for _, m in mfound:
+            self._params.extend(m._params)
             
         # Scan for dtype consistency
         dtype: DTypeLike = None
@@ -192,8 +183,6 @@ class MiniMLModel(ABC):
         reg_loss = jnp.array(0.0, dtype=jnp.dtype(self._dtype))
         for p in self._params:
             reg_loss += p.regularization_loss()
-        for m in self._models:
-            reg_loss += m.regularization_loss()
         return reg_loss
 
     def total_loss(self, y_true: JXArray, y_pred: JXArray, reg_lambda: float = 1.0) -> JXArray:

@@ -23,6 +23,7 @@ class MLP(MiniMLModel):
                 Defaults to LNormRegularization(2).
         """
         
+        
         if len(layer_sizes) < 2:
             raise MiniMLError("MLP must have at least two layers (input and output)")
         
