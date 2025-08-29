@@ -1,5 +1,5 @@
 [project]
-name = "miniml"
+name = "miniml-jax"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -9,12 +9,13 @@ dependencies = [
     "scipy>=1.16.1",
 ]
 
-[project.scripts]
-miniml = "miniml:main"
-
 [build-system]
 requires = ["uv_build>=0.8.11,<0.9.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "miniml"
+module-root = "src/"
 
 [dependency-groups]
 dev = [

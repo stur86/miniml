@@ -1,9 +1,10 @@
 from miniml.param import MiniMLParam, MiniMLError, MiniMLParamList
-from miniml.model import MiniMLModel
+from miniml.model import MiniMLModel, MiniMLModelList
 
 __all__ = [
     "MiniMLParam",
     "MiniMLParamList",
     "MiniMLError",
-    "MiniMLModel"
+    "MiniMLModel",
+    "MiniMLModelList"
 ]
