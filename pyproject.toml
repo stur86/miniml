@@ -19,6 +19,7 @@ module-root = "src/"
 
 [dependency-groups]
 dev = [
+    "mkdocs-material>=9.6.18",
     "pytest>=8.4.1",
 ]
 examples = [
