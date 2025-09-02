@@ -1,0 +1,20 @@
+site_name: MiniML documentation
+
+theme:
+  name: "material"
+
+plugins:
+- search
+- autorefs
+- mkdocstrings:
+    enabled: !ENV [ENABLE_MKDOCSTRINGS, true]
+    default_handler: python
+    locale: en
+    handlers:
+      python:
+        paths: [./src]
+        options:
+          show_root_heading: true
+          show_symbol_type_heading: true
+          show_source: false
+          members_order: source
