@@ -6,7 +6,7 @@ import time
 import jax
 from jax import Array as JXArray
 import jax.numpy as jnp
-from numpy.typing import DTypeLike
+from numpy.typing import DTypeLike, NDArray
 from miniml.param import MiniMLParam, MiniMLError, _supported_types
 from miniml.loss import LossFunction, squared_error_loss
 from scipy.optimize import minimize
@@ -32,6 +32,7 @@ class MiniMLModel(ABC):
     
     _dtype: DTypeLike
     _dtype_name: str
+    _buffer_size: int
     _buffer: JXArray
     _params: list[MiniMLParam]
     _loss_f: LossFunction | None = None
@@ -74,6 +75,8 @@ class MiniMLModel(ABC):
                     
         self._dtype = dtype
         self._dtype_name = _supported_types.get_inverse(dtype)  # type: ignore
+        # Calculate total size
+        self._buffer_size = sum(p.size for p in self._params)
 
     @property
     def bound(self) -> bool:
@@ -117,10 +120,8 @@ class MiniMLModel(ABC):
             raise MiniMLError("Model parameters have not been initialized; remember to call super().__init__() at the end of the constructor")
 
         if not self.bound:
-            # Calculate total size
-            total_size = sum(p.size for p in self._params)
             # Initialize buffers
-            self._buffer = jnp.empty(total_size, dtype=jnp.dtype(self._dtype))
+            self._buffer = jnp.empty(self._buffer_size, dtype=jnp.dtype(self._dtype))
 
         # Bind buffers to parameters
         i0 = 0
@@ -246,10 +247,21 @@ class MiniMLModel(ABC):
             self.bind()
         
         load_dict = np.load(filename)
-        buf = load_dict["buffer"]
+        self.set_buffer(load_dict["buffer"])        
+        
+    def get_buffer(self, copy: bool = True) -> JXArray:
+        if copy:
+            return self._buffer.copy()
+        return self._buffer
+    
+    def set_buffer(self, buf: JXArray | NDArray) -> None:
+        
+        buf = jnp.array(buf)
         if self._dtype != buf.dtype:
             raise MiniMLError(f"Parameter buffer dtype mismatch: model has {self._dtype}, file has {buf.dtype}")
-        self._buffer = jnp.array(buf)
+        if buf.shape != (self._buffer_size,):
+            raise MiniMLError(f"Parameter buffer shape mismatch: model has {self._buffer_size}, file has {buf.shape}")
+        self._buffer = buf
         
     def _get_inner_params(self) -> list[MiniMLParam]:
         return self._params
