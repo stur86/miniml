@@ -40,3 +40,4 @@ exclude = ["docs/**", "examples/**", "src/miniml/__init__.py"]
 lint = "ruff check ."
 format = "ruff check . --fix"
 test = "pytest"
+build-docs = "mkdocs build"
