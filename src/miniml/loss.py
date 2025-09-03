@@ -23,13 +23,23 @@ class RegLossFunctionBase(ABC):
         pass
 
 def squared_error_loss(y_true: JXArray, y_pred: JXArray) -> JXArray:
-    """Compute the squared loss between true and predicted values."""
+    r"""Compute the squared loss between true and predicted values:
+    
+    $$
+    \mathcal{L}(y, \hat{y}) = \sum_i (y_i-\hat{y}_i)^2
+    $$    
+    """
     if y_true.shape != y_pred.shape:
         raise ValueError("Shapes of true and predicted values must match.")
     return jnp.sum((y_true - y_pred) ** 2)
 
 def cross_entropy_loss(y_true: JXArray, y_pred: JXArray) -> JXArray:
-    """Compute the cross-entropy loss between true and predicted values."""
+    r"""Compute the cross-entropy loss between true and predicted values.
+    
+    $$
+    \mathcal{L}(y, \hat{y}) = -\sum_i y_i \log(\hat{y}_i)
+    $$    
+    """
     if y_true.shape != y_pred.shape:
         raise ValueError("Shapes of true and predicted values must match.")
     # Avoid log(0) by clipping predictions
@@ -38,8 +48,24 @@ def cross_entropy_loss(y_true: JXArray, y_pred: JXArray) -> JXArray:
 
 
 class CrossEntropyLogLoss(LossFunctionBase):
+    r"""Compute the cross-entropy loss between true and predicted values,
+    assuming that $\hat{y}$ is an array of unnormalized logits instead of 
+    probabilities.
+    
+    $$
+    \mathcal{L}(y, \hat{y}) = -\sum_i y_i \hat{y}_i + \log\left(\sum_i \exp(\hat{y}_i)\right)
+    $$
+
+    """
     
     def __init__(self, zero_ref: bool = False) -> None:
+        """Initialize the cross-entropy log loss function.
+
+        Args:
+            zero_ref (bool, optional): Whether to add a zero reference category.
+                If true, log_y_pred must have one less element along the category dimension
+                than y_true. Defaults to False.
+        """
         self.zero_ref = zero_ref
         
     def __call__(self, y_true: JXArray, log_y_pred: JXArray) -> JXArray:
@@ -55,12 +81,33 @@ class CrossEntropyLogLoss(LossFunctionBase):
         return -jnp.sum(y_true * log_y_pred)
 
 class LNormRegularization(RegLossFunctionBase):
-    def __init__(self, k: int = 2, root: bool = False) -> None:
-        self.k = k
+    r"""L^p norm regularization. Optionally includes taking the p-th root.
+    
+    Without root:
+    
+    $$
+    \mathcal{R}_p(w) = \sum_i |w_i|^p
+    $$
+    
+    With root:
+
+    $$
+    \mathcal{R}_p(w) = (\sum_i |w_i|^p)^{1/p}
+    $$
+    """
+    
+    def __init__(self, p: int = 2, root: bool = False) -> None:
+        """Initialize the LNormRegularization class.
+
+        Args:
+            p (int, optional): The order of the norm. Defaults to 2.
+            root (bool, optional): Whether to take the root of the norm. Defaults to False.
+        """
+        self.p = p
         self.return_root = root
         
     def __call__(self, y: JXArray) -> JXArray:
-        ans = jnp.sum(jnp.abs(y) ** self.k)
+        ans = jnp.sum(jnp.abs(y) ** self.p)
         if self.return_root:
-            return ans**(1.0/self.k)
+            return ans**(1.0/self.p)
         return ans

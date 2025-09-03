@@ -24,6 +24,8 @@ nav:
   - setup.md
   - start.md
   - save_load.md
+  - loss.md
+  - fit.md
 
 plugins:
 - search
@@ -40,12 +42,30 @@ plugins:
           show_symbol_type_heading: true
           show_source: false
           members_order: source
+- api-autonav:
+    modules: ["src/miniml"]
+    exclude: ["miniml.utils"]
+    nav_section_title: "API Reference"
+    api_root_uri: "api"
+    exclude_private: true
 
 markdown_extensions:
+  - admonition
   - pymdownx.highlight:
       anchor_linenums: true
       line_spans: __span
       pygments_lang_class: true
   - pymdownx.inlinehilite
+  - pymdownx.details
   - pymdownx.snippets
   - pymdownx.superfences
+  - pymdownx.arithmatex:
+      generic: true
+
+extra_javascript:
+  - js/katex.js
+  - https://unpkg.com/katex@0/dist/katex.min.js
+  - https://unpkg.com/katex@0/dist/contrib/auto-render.min.js
+
+extra_css:
+  - https://unpkg.com/katex@0/dist/katex.min.css

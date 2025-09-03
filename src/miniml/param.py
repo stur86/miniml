@@ -78,7 +78,7 @@ class MiniMLParam:
 
         Args:
             i0 (int): The starting index in the buffer.
-            buf (BufferContainer): The container for the
+            bufc (BufferContainer): The container for the
                 buffer to bind to.
 
         Raises:

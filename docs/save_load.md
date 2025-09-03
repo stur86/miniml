@@ -12,3 +12,5 @@ as the saved model, but the construction parameters are saved in the file togeth
 ```py
 model = MyModel.load("model_file_name.npz")
 ```
+
+For more information see [the API reference for the model class](api/miniml/model.md).
