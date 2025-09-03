@@ -11,3 +11,6 @@ wheels/
 
 # MkDocs build
 site/
+
+# VSCode settings
+.vscode/*
