@@ -27,7 +27,7 @@ if __name__ == "__main__":
 
     lin_model = LinearModel(X.shape[1], y.shape[1])
     lin_model.randomize()
-    success = lin_model.fit(X, y)
+    success = lin_model.fit(X, y).success
     y_hat = lin_model.predict(X)
     
     print(f"Fit converged: {success}")
@@ -68,7 +68,7 @@ The constructor structure is extremely important:
 * ***all*** child parameters and models must be defined inside the constructor;
 * the parent constructor `super().__init__()` must be called as the very last thing.
 
-If either of these things aren't done, the model won't work.
+If either of these things aren't done, the model won't work. Parameters are tensors initialized by passing the shape as a tuple of integers, and optionally the `jax.numpy.dtype` and the regularization loss (see [regularization loss](loss.md#regularization-loss) for more details)
 
 #### Predict method implementation
 
@@ -110,7 +110,7 @@ For models created from scratch, `.randomize()` is recommended. If loading a mod
 #### Fitting
 
 ```py
-    success = lin_model.fit(X, y)
+    success = lin_model.fit(X, y).success
 ```
 
 Fitting is performed here on a batch of `X` and `y`. The required shape of these tensors is entirely down to how the `.predict` method and the loss functions are implemented, so it can be customized if necessary.

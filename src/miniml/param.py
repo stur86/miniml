@@ -141,10 +141,16 @@ class MiniMLParamList:
     _contents: list[MiniMLParam]
 
     def __init__(self, contents: list[MiniMLParam]) -> None:
+        """Initialize the list of parameters.
+
+        Args:
+            contents (list[MiniMLParam]): The list of parameters to include.
+        """
         self._contents = contents
         
     @property
     def contents(self) -> list[MiniMLParam]:
+        """The list of parameters."""
         return self._contents
     
     @property
@@ -153,9 +159,11 @@ class MiniMLParamList:
         return jnp.array([param.regularization_loss() for param in self._contents]).sum()
 
     def __getitem__(self, index: int) -> MiniMLParam:
+        """Access a parameter by index."""
         return self._contents[index]
 
     def __len__(self) -> int:
+        """Total length of the list."""
         return len(self._contents)
     
     def _get_inner_params(self) -> list[MiniMLParam]:

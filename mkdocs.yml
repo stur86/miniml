@@ -26,6 +26,7 @@ nav:
   - save_load.md
   - loss.md
   - fit.md
+  - containers.md
 
 plugins:
 - search

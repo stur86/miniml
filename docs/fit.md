@@ -8,3 +8,28 @@ for maximum efficiency, which can be often more powerful than classic gradient d
     Different SciPy methods require different inputs. Some require only the value of the objective function, others the jacobian, others the Hessian
     or the product of the Hessian with a vector $\mathbf{p}$. MiniML handles all of this and produces the necessary functions with Jax, then optimizes them with `jax.jit` before passing them to `.minimize`.
 
+## Fitting success
+
+The `.fit` method returns a result value containing information such as whether the call to `.minimize` succeeded (achieved convergence within the maximum number of iterations).
+
+```py
+    res = lin_model.fit(X, y)
+    
+    print(f"Fit converged: {res.success}")
+    print(f"Final loss: {res.loss}")
+```
+
+## Recipe: batch fitting
+
+The fitting method doesn't take care of complex fitting processes such as splitting into batches, or changing the regularization strength from one batch to another. If you want to do something like that you can however use a structure like this:
+
+```py
+for i, (X, y) in enumerate(training_batches):
+    reg_lambda = reg_strength(i) # This could be changing based on iteration
+    res = model.fit(X, y, reg_lambda=reg_lambda, fit_args={"options": {"maxiter": 5}})
+    print(f"Batch {i+1} | Loss = {res.loss}")
+```
+
+This way, fitting will run only for 5 iterations; it's likely that it won't achieve convergence in that time, but it will still store
+the latest value of the parameters obtained. The next iteration will then use the updated regularization strength, a new batch, and advance towards the minimum.
+

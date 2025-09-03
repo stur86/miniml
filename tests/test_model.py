@@ -1,4 +1,3 @@
-
 from pathlib import Path
 import numpy as np
 import pytest
@@ -15,7 +14,7 @@ def test_model(tmp_path: Path):
         def __init__(self):
             self._c = MiniMLParam((1,))
             super().__init__()
-            
+
         def predict(self, X: JXArray) -> JXArray:
             return self._c.value
 
@@ -27,9 +26,9 @@ def test_model(tmp_path: Path):
             self._c = ConstantModel()
 
             super().__init__()
-            
+
         def predict(self, X: JXArray) -> JXArray:
-            return self._M.value@X + self._b.value[:, None] + self._c.predict(X)
+            return self._M.value @ X + self._b.value[:, None] + self._c.predict(X)
 
     m = LinearModel()
 
@@ -69,7 +68,7 @@ def test_dtype_mismatch():
             self.p1 = MiniMLParam((2,), dtype=np.float32)
             self.p2 = MiniMLParam((2,), dtype=np.float64)
             super().__init__()
-            
+
         def predict(self, X: JXArray) -> JXArray:
             return super().predict(X)
 
@@ -82,7 +81,7 @@ def test_child_model_no_super():
         def __init__(self):
             self.p = MiniMLParam((1,))
             # Forgot super().__init__()
-            
+
         def predict(self, X: JXArray) -> JXArray:
             return super().predict(X)
 
@@ -90,7 +89,7 @@ def test_child_model_no_super():
         def __init__(self):
             self.child = BadChild()
             super().__init__()
-            
+
         def predict(self, X: JXArray) -> JXArray:
             return super().predict(X)
 
@@ -103,7 +102,7 @@ def test_save_before_bind(tmp_path: Path):
         def __init__(self):
             self.p = MiniMLParam((1,))
             super().__init__()
-        
+
         def predict(self, X: JXArray) -> JXArray:
             return super().predict(X)
 
@@ -117,7 +116,7 @@ def test_load_before_bind(tmp_path: Path):
         def __init__(self, n: int):
             self.p = MiniMLParam((n,))
             super().__init__()
-        
+
         def predict(self, X: JXArray) -> JXArray:
             return super().predict(X)
 
@@ -134,17 +133,20 @@ def test_squared_error_loss():
     y_true = jnp.array([1.0, 2.0, 3.0])
     y_pred = jnp.array([1.0, 2.5, 2.0])
     loss = squared_error_loss(y_true, y_pred)
-    expected = (0.0**2 + 0.5**2 + 1.0**2)
+    expected = 0.0**2 + 0.5**2 + 1.0**2
     assert jnp.isclose(loss, expected)
 
 
 def test_param_regularization_loss():
     from miniml.param import MiniMLParam
+
     # L2 regularization on a parameter
     param = MiniMLParam((3,), reg_loss=LNormRegularization(), dtype=jnp.float32)
+
     class DummyModel:
         def __init__(self, buf):
             self._buffer = buf
+
     # Bind to dummy buffer
     buf = jnp.array([3.0, 4.0, 0.0], dtype=jnp.float32)
     dummy = DummyModel(buf)
@@ -154,13 +156,15 @@ def test_param_regularization_loss():
     assert jnp.isclose(reg, 25.0)
 
 
-def test_linear_model_fit_no_reg():
+@pytest.mark.parametrize("method", ["L-BFGS-B", "Nelder-Mead", "trust-krylov"])
+def test_linear_model_fit_no_reg(method: str):
     # Fit y = a*x + b, no regularization, analytical solution
     class LinearModel(MiniMLModel):
         def __init__(self):
             self.a = MiniMLParam((1,))
             self.b = MiniMLParam((1,))
             super().__init__()
+
         def predict(self, X):
             return self.a.value * X + self.b.value
 
@@ -170,19 +174,23 @@ def test_linear_model_fit_no_reg():
     model = LinearModel()
     model.bind()
     model._buffer = jnp.array([0.0, 0.0], dtype=jnp.float32)  # init to zeros
-    assert model.fit(X, y)
+    res = model.fit(X, y, fit_args={"method": method})
+    assert res.success
+
     a_fit, b_fit = model.a.value[0], model.b.value[0]
     assert jnp.isclose(a_fit, 2.0, atol=1e-2)
     assert jnp.isclose(b_fit, 1.0, atol=1e-2)
 
 
-def test_linear_model_fit_with_l2_reg():
+@pytest.mark.parametrize("method", ["L-BFGS-B", "Nelder-Mead", "trust-krylov"])
+def test_linear_model_fit_with_l2_reg(method: str):
     # Fit y = a*x + b, with L2 regularization on a
     class LinearModel(MiniMLModel):
         def __init__(self):
             self.a = MiniMLParam((1,), reg_loss=LNormRegularization())
             self.b = MiniMLParam((1,))
             super().__init__()
+
         def predict(self, X):
             return self.a.value * X + self.b.value
 
@@ -191,9 +199,11 @@ def test_linear_model_fit_with_l2_reg():
     y = 2 * X + 1
     reg_lambda = 10.0
     model = LinearModel()
-    model.bind()
-    model.randomize()
-    model.fit(X, y, reg_lambda=reg_lambda)
+    model.randomize(seed=42)
+    res = model.fit(X, y, reg_lambda=reg_lambda, fit_args={"method": method})
+    assert res.success
+    assert jnp.isclose(res.loss, model.total_loss(y, model.predict(X), reg_lambda))
+
     a_fit, b_fit = model.a.value[0], model.b.value[0]
     # Analytical ridge regression solution for a: a = Sxy / (Sxx + lambda)
     Xc = X - X.mean()
@@ -204,12 +214,13 @@ def test_linear_model_fit_with_l2_reg():
     assert jnp.isclose(a_fit, a_analytical, atol=1e-2)
     assert jnp.isclose(b_fit, b_analytical, atol=1e-2)
 
+
 def test_model_list():
     class M1(MiniMLModel):
         def __init__(self):
             self.p = MiniMLParam((1,))
             super().__init__()
-        
+
         def predict(self, X: JXArray) -> JXArray:
             return super().predict(X)
 
@@ -217,7 +228,7 @@ def test_model_list():
         def __init__(self):
             self.p = MiniMLParam((2,))
             super().__init__()
-        
+
         def predict(self, X: JXArray) -> JXArray:
             return super().predict(X)
 

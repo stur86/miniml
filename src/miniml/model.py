@@ -1,6 +1,7 @@
 import numpy as np
 from abc import ABC, abstractmethod
 from pathlib import Path
+from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable, Type, TypeVar
 import time
 import jax
@@ -17,6 +18,17 @@ from scipy.optimize import minimize
 class ParametrizedObject(Protocol):
 
     def _get_inner_params(self) -> list[MiniMLParam]: ...
+
+
+@dataclass
+class MiniMLFitResult:
+    success: bool
+    message: str
+    loss: float
+    niter: int
+    nfev: int
+    njev: int | None = None
+    nhev: int | None = None
 
 
 T = TypeVar("T", bound="MiniMLModel")
@@ -236,7 +248,7 @@ class MiniMLModel(ABC):
         y: JXArray,
         reg_lambda: float = 1.0,
         fit_args: dict[str, Any] = {"method": "L-BFGS-B"},
-    ) -> bool:
+    ) -> MiniMLFitResult:
         """Fit the model parameters to the data by minimizing the total loss.
         See [the SciPy docs](https://docs.scipy.org/doc/scipy-1.16.1/reference/generated/scipy.optimize.minimize.html) 
         for details on the optimization arguments.
@@ -248,6 +260,9 @@ class MiniMLModel(ABC):
             fit_args (dict[str, Any], optional): Arguments for the optimizer.
                 Refer to the documentation for scipy.minimize for details.
                 Defaults to {"method": "L-BFGS-B"}.
+                
+        Returns:
+            MiniMLFitResult: An object containing information about the fitting process.
         """
         if not self.bound:
             self.bind()
@@ -283,7 +298,15 @@ class MiniMLModel(ABC):
         sol = minimize(_targ_fun_opt, self._buffer, jac=requires_jac, **fit_args)
         self._buffer = jnp.array(sol.x, dtype=jnp.dtype(self._dtype))
 
-        return sol.success
+        return MiniMLFitResult(
+            success=sol.success,
+            message=sol.message,
+            loss=sol.fun,
+            niter=sol.nit,
+            nfev=sol.nfev,
+            njev=sol.get("njev", None),
+            nhev=sol.get("nhev", None)
+        )
 
     def save(self, filename: str | Path) -> None:
         """Save the model parameters to a file.
@@ -353,19 +376,29 @@ class MiniMLModel(ABC):
 
 
 class MiniMLModelList:
+    """A list of MiniMLModels."""
+    
     _contents: list[MiniMLModel]
 
     def __init__(self, models: list[MiniMLModel]) -> None:
+        """Construct the list of models.
+
+        Args:
+            models (list[MiniMLModel]): List of models to include
+        """
         self._contents = models
 
     @property
     def contents(self) -> list[MiniMLModel]:
+        """Get the list of models."""
         return self._contents
 
     def __getitem__(self, i: int) -> MiniMLModel:
+        """Access a model by index."""
         return self._contents[i]
 
     def __len__(self) -> int:
+        """Total length of the list."""
         return len(self._contents)
 
     def _get_inner_params(self) -> list[MiniMLParam]:
