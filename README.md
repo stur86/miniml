@@ -1,6 +1,7 @@
 # MiniML
 
 [![Run tests](https://github.com/stur86/miniml/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/stur86/miniml/actions/workflows/test.yml)
+![PyPI](https://img.shields.io/pypi/v/miniml-jax?label=pypi%20package)
 
 MiniML (pronounced "minimal") is a tiny machine-learning framework which uses [Jax](https://github.com/jax-ml/jax) as its core engine, but mixes a PyTorch
 inspired approach to building model with Scikit-learn's interface (using the `.fit` and `.predict` methods), and is powered by SciPy's optimization algorithms. It's meant for simple prototyping of small ML architectures that allows more flexibility than Scikit's built-in models without sacrificing too much on performance.

@@ -1,5 +1,6 @@
 site_name: MiniML documentation
 site_url: https://stur86.github.io/miniml/
+repo_url: https://github.com/stur86/miniml
 
 theme:
   name: "material"

@@ -1,7 +1,7 @@
 [project]
 name = "miniml-jax"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.1.1"
+description = "MiniML - a minimalistic ML framework"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -9,6 +9,10 @@ dependencies = [
     "scipy>=1.16.1",
 ]
 url = "https://stur86.github.io/miniml/"
+
+[project.urls]
+Documentation = "https://stur86.github.io/miniml/"
+Repository = "https://github.com/stur86/miniml"
 
 [build-system]
 requires = ["uv_build>=0.8.11,<0.9.0"]
