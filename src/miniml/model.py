@@ -182,7 +182,7 @@ class MiniMLModel(ABC):
             )
 
     def loss(self, y_true: JXArray, y_pred: JXArray) -> JXArray:
-        """Compute the loss between true and predicted values using the model's loss function.
+        """Compute the loss $\\mathcal{L}(y, \\hat{y})$ between true and predicted values using the model's loss function.
 
         Args:
             y_true (JXArray): Ground truth values.
@@ -196,7 +196,7 @@ class MiniMLModel(ABC):
         return self._loss_f(y_true, y_pred)
 
     def regularization_loss(self) -> JXArray:
-        """Compute the total regularization loss for all parameters and child models.
+        """Compute the total regularization loss $\\sum_i\\mathcal{R}_i(w_i)$ for all parameters and child models.
 
         Returns:
             JXArray: The total regularization loss.
@@ -209,7 +209,12 @@ class MiniMLModel(ABC):
     def total_loss(
         self, y_true: JXArray, y_pred: JXArray, reg_lambda: float = 1.0
     ) -> JXArray:
-        """Compute the total loss as the sum of prediction loss and regularization loss.
+        """Compute the total loss as the sum of prediction loss and regularization loss, with
+        a strength parameter:
+        
+        $$
+        \\mathcal{L}(y, \\hat{y}) + \\lambda\\left(\\sum_i\\mathcal{R}_i(w_i)\\right)
+        $$
 
         Args:
             y_true (JXArray): Ground truth values.
@@ -233,6 +238,8 @@ class MiniMLModel(ABC):
         fit_args: dict[str, Any] = {"method": "L-BFGS-B"},
     ) -> bool:
         """Fit the model parameters to the data by minimizing the total loss.
+        See [the SciPy docs](https://docs.scipy.org/doc/scipy-1.16.1/reference/generated/scipy.optimize.minimize.html) 
+        for details on the optimization arguments.
 
         Args:
             X (JXArray): Input features.
@@ -249,10 +256,31 @@ class MiniMLModel(ABC):
             self._buffer = p
             loss = self.total_loss(y, self.predict(X), reg_lambda)
             return loss
+        
+        # Does the method require a jacobian?
+        method: str = fit_args.get("method", "L-BFGS-B")
+        requires_jac = method not in {"Nelder-Mead", "Powell"}
+        # Does it require a hessian product?
+        requires_hessp = method in {"Newton-CG", "trust-ncg", "trust-krylov", "trust-constr"}
+        # Does it require directly a hessian?
+        requires_hess = method in {"dogleg", "trust-exact"}
 
-        _targ_fun_opt = jax.jit(jax.value_and_grad(_targ_fun))
+        if requires_jac:
+            _targ_fun_opt = jax.jit(jax.value_and_grad(_targ_fun))
+        else:
+            _targ_fun_opt = jax.jit(_targ_fun)
+        
+        if requires_hessp:
+            _targ_jac = jax.jit(jax.grad(_targ_fun))
+            def jac_dir(x, p):
+                return _targ_jac(x) @ p
+            _targ_hessp = jax.jit(jax.grad(jac_dir, argnums=0))
+            fit_args["hessp"] = _targ_hessp
+        if requires_hess:
+            _targ_hess = jax.jit(jax.hessian(_targ_fun))
+            fit_args["hess"] = _targ_hess
 
-        sol = minimize(_targ_fun_opt, self._buffer, jac=True, **fit_args)
+        sol = minimize(_targ_fun_opt, self._buffer, jac=requires_jac, **fit_args)
         self._buffer = jnp.array(sol.x, dtype=jnp.dtype(self._dtype))
 
         return sol.success
@@ -284,7 +312,7 @@ class MiniMLModel(ABC):
 
     @classmethod
     def load(cls: Type[T], filename: str | Path) -> T:
-        """Load the model parameters from a file.
+        """Load a model from a file.
 
         Args:
             filename (str | Path): The file name.
