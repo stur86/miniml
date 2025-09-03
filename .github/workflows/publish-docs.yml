@@ -1,0 +1,43 @@
+# This workflow builds and deploys documentation to GitHub Pages using UV and the build-docs task.
+# It runs on pushes to main and on workflow_dispatch (manual trigger).
+
+name: Publish docs
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v3
+        with:
+          python-version: 3.12
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.8.11"
+
+      - name: Install dependencies
+        run: |
+          uv sync
+
+      - name: Build docs
+        run: |
+          uv run task build-docs
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
