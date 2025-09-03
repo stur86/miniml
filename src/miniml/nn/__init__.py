@@ -1,3 +1,4 @@
+"""Utilities for common ML model architectures"""
 from miniml.nn.activations import (
     relu,
     sigmoid,

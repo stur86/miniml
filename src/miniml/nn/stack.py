@@ -10,6 +10,6 @@ class Stack(MiniMLModel):
         super().__init__()
         
     def predict(self, X):
-        for model in self._model_list:
+        for model in self._model_list.contents:
             X = model.predict(X)
         return X
