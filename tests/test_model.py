@@ -58,9 +58,9 @@ def test_model(tmp_path: Path):
     assert not np.array_equal(m._M.value, M_val)
 
     # Reload
-    m.load(save_path)
+    m_loaded = LinearModel.load(save_path)
 
-    assert np.array_equal(m._M.value, M_val)
+    assert np.array_equal(m_loaded._M.value, M_val)
 
 
 def test_dtype_mismatch():
@@ -114,21 +114,19 @@ def test_save_before_bind(tmp_path: Path):
 
 def test_load_before_bind(tmp_path: Path):
     class M(MiniMLModel):
-        def __init__(self):
-            self.p = MiniMLParam((2,))
+        def __init__(self, n: int):
+            self.p = MiniMLParam((n,))
             super().__init__()
         
         def predict(self, X: JXArray) -> JXArray:
             return super().predict(X)
 
-    m = M()
+    m = M(n=2)
     m.bind()
     m.randomize()
     save_path = tmp_path / "m.npz"
     m.save(save_path)
-    m2 = M()
-    # Should bind automatically on load
-    m2.load(save_path)
+    m2 = M.load(save_path)
     assert np.allclose(m2._buffer, m._buffer)
 
 
@@ -172,7 +170,7 @@ def test_linear_model_fit_no_reg():
     model = LinearModel()
     model.bind()
     model._buffer = jnp.array([0.0, 0.0], dtype=jnp.float32)  # init to zeros
-    model.fit(X, y)
+    assert model.fit(X, y)
     a_fit, b_fit = model.a.value[0], model.b.value[0]
     assert jnp.isclose(a_fit, 2.0, atol=1e-2)
     assert jnp.isclose(b_fit, 1.0, atol=1e-2)
