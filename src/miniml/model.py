@@ -117,6 +117,15 @@ class MiniMLModel(ABC):
         return hasattr(self, "_buffer")
 
     @property
+    def size(self) -> int:
+        """Get the total number of parameters in the model.
+
+        Returns:
+            int: The total number of parameters.
+        """
+        return self._buffer_size
+
+    @property
     def ready(self) -> bool:
         """Check if the model parameters are initialized and bound.
 
@@ -224,7 +233,7 @@ class MiniMLModel(ABC):
     ) -> JXArray:
         """Compute the total loss as the sum of prediction loss and regularization loss, with
         a strength parameter:
-        
+
         $$
         \\mathcal{L}(y, \\hat{y}) + \\lambda\\left(\\sum_i\\mathcal{R}_i(w_i)\\right)
         $$
@@ -251,7 +260,7 @@ class MiniMLModel(ABC):
         fit_args: dict[str, Any] = {"method": "L-BFGS-B"},
     ) -> MiniMLFitResult:
         """Fit the model parameters to the data by minimizing the total loss.
-        See [the SciPy docs](https://docs.scipy.org/doc/scipy-1.16.1/reference/generated/scipy.optimize.minimize.html) 
+        See [the SciPy docs](https://docs.scipy.org/doc/scipy-1.16.1/reference/generated/scipy.optimize.minimize.html)
         for details on the optimization arguments.
 
         Args:
@@ -261,7 +270,7 @@ class MiniMLModel(ABC):
             fit_args (dict[str, Any], optional): Arguments for the optimizer.
                 Refer to the documentation for scipy.minimize for details.
                 Defaults to {"method": "L-BFGS-B"}.
-                
+
         Returns:
             MiniMLFitResult: An object containing information about the fitting process.
         """
@@ -272,12 +281,17 @@ class MiniMLModel(ABC):
             self._buffer = p
             loss = self.total_loss(y, self.predict(X), reg_lambda)
             return loss
-        
+
         # Does the method require a jacobian?
         method: str = fit_args.get("method", "L-BFGS-B")
         requires_jac = method not in {"Nelder-Mead", "Powell"}
         # Does it require a hessian product?
-        requires_hessp = method in {"Newton-CG", "trust-ncg", "trust-krylov", "trust-constr"}
+        requires_hessp = method in {
+            "Newton-CG",
+            "trust-ncg",
+            "trust-krylov",
+            "trust-constr",
+        }
         # Does it require directly a hessian?
         requires_hess = method in {"dogleg", "trust-exact"}
 
@@ -285,11 +299,13 @@ class MiniMLModel(ABC):
             _targ_fun_opt = jax.jit(jax.value_and_grad(_targ_fun))
         else:
             _targ_fun_opt = jax.jit(_targ_fun)
-        
+
         if requires_hessp:
             _targ_jac = jax.jit(jax.grad(_targ_fun))
+
             def jac_dir(x, p):
                 return _targ_jac(x) @ p
+
             _targ_hessp = jax.jit(jax.grad(jac_dir, argnums=0))
             fit_args["hessp"] = _targ_hessp
         if requires_hess:
@@ -306,7 +322,7 @@ class MiniMLModel(ABC):
             niter=sol.nit,
             nfev=sol.nfev,
             njev=sol.get("njev", None),
-            nhev=sol.get("nhev", None)
+            nhev=sol.get("nhev", None),
         )
 
     def save(self, filename: str | Path) -> None:
@@ -344,11 +360,11 @@ class MiniMLModel(ABC):
         load_dict = np.load(filename, allow_pickle=True)
         mdata = load_dict["metadata"][0]
         assert mdata["model_name"] == cls.__name__, "Model is not same class"
-        
+
         init = load_dict["init"][0]
         args = init["args"]
-        kwargs = init["kwargs"]    
-        
+        kwargs = init["kwargs"]
+
         model = cls(*args, **kwargs)  # type: ignore
         model.bind()
         model.set_buffer(load_dict["buffer"])
@@ -371,7 +387,7 @@ class MiniMLModel(ABC):
                 f"Parameter buffer shape mismatch: model has {self._buffer_size}, buffer has {buf.shape}"
             )
         self._buffer = buf
-        
+
     def get_params(self) -> dict[str, JXArray]:
         """Get a dictionary of parameter names and their values.
         All values are copies of the internal buffers.
@@ -380,7 +396,7 @@ class MiniMLModel(ABC):
             dict[str, JXArray]: A dictionary mapping parameter names to their values.
         """
         return {f"param_{i}": p.value.copy() for i, p in enumerate(self._params)}
-    
+
     def set_params(self, params: dict[str, JXArray]) -> None:
         """Set the model parameters from a dictionary of parameter names and their values.
 
@@ -399,14 +415,14 @@ class MiniMLModel(ABC):
             p = self._params[idx]
             idx = slice(p._buf_i0, p._buf_i0 + p.size)
             self._buffer = self._buffer.at[idx].set(val.reshape(-1))
-            
+
     def _get_inner_params(self) -> list[MiniMLParam]:
         return self._params
 
 
 class MiniMLModelList:
     """A list of MiniMLModels."""
-    
+
     _contents: list[MiniMLModel]
 
     def __init__(self, models: list[MiniMLModel]) -> None:
