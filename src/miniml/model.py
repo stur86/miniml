@@ -4,6 +4,7 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable, Type, TypeVar
 import time
+import re
 import jax
 from jax import Array as JXArray
 import jax.numpy as jnp
@@ -370,7 +371,35 @@ class MiniMLModel(ABC):
                 f"Parameter buffer shape mismatch: model has {self._buffer_size}, buffer has {buf.shape}"
             )
         self._buffer = buf
+        
+    def get_params(self) -> dict[str, JXArray]:
+        """Get a dictionary of parameter names and their values.
+        All values are copies of the internal buffers.
 
+        Returns:
+            dict[str, JXArray]: A dictionary mapping parameter names to their values.
+        """
+        return {f"param_{i}": p.value.copy() for i, p in enumerate(self._params)}
+    
+    def set_params(self, params: dict[str, JXArray]) -> None:
+        """Set the model parameters from a dictionary of parameter names and their values.
+
+        Args:
+            params (dict[str, JXArray]): A dictionary mapping parameter names to their values.
+        """
+        p_re = re.compile(r"param_(\d+)")
+
+        for key, val in params.items():
+            m = p_re.match(key)
+            if m is None:
+                raise MiniMLError(f"Invalid parameter name: {key}")
+            idx = int(m.group(1))
+            if idx < 0 or idx >= len(self._params):
+                raise MiniMLError(f"Parameter index out of range: {idx}")
+            p = self._params[idx]
+            idx = slice(p._buf_i0, p._buf_i0 + p.size)
+            self._buffer = self._buffer.at[idx].set(val.reshape(-1))
+            
     def _get_inner_params(self) -> list[MiniMLParam]:
         return self._params
 

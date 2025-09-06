@@ -239,3 +239,32 @@ def test_model_list():
     assert len(mlist._get_inner_params()) == 2
     assert mlist._get_inner_params()[0] == mlist._contents[0]._params[0]
     assert mlist._get_inner_params()[1] == mlist._contents[1]._params[0]
+
+def test_model_set_get_params():
+    class M(MiniMLModel):
+        def __init__(self):
+            self.p1 = MiniMLParam((2,))
+            self.p2 = MiniMLParam((3,))
+            super().__init__()
+
+        def predict(self, X: JXArray) -> JXArray:
+            return super().predict(X)
+
+    m = M()
+    m.bind()
+    m.set_buffer(jnp.arange(5, dtype=jnp.float32))
+    params = m.get_params()
+    
+    assert len(params) == 2
+    assert list(params.keys()) == ['param_0', 'param_1']
+    assert np.array_equal(params['param_0'], jnp.array([0.0, 1.0], dtype=jnp.float32))
+    assert np.array_equal(params['param_1'], jnp.array([2.0, 3.0, 4.0], dtype=jnp.float32))
+    
+    # Now try setting instead
+    new_params = {
+        'param_0': jnp.array([10.0, 20.0], dtype=jnp.float32),
+        'param_1': jnp.array([30.0, 40.0, 50.0], dtype=jnp.float32)
+    }
+    m.set_params(new_params)
+    assert np.array_equal(m.p1.value, new_params['param_0'])
+    assert np.array_equal(m.p2.value, new_params['param_1'])
