@@ -254,6 +254,7 @@ def test_model_set_get_params():
     m.bind()
     m.set_buffer(jnp.arange(5, dtype=jnp.float32))
     params = m.get_params()
+    assert m.size == 5
     
     assert len(params) == 2
     assert list(params.keys()) == ['param_0', 'param_1']
