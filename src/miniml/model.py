@@ -1,4 +1,5 @@
 import numpy as np
+from typing import Callable
 from abc import ABC, abstractmethod
 from pathlib import Path
 from dataclasses import dataclass
@@ -57,6 +58,9 @@ class MiniMLModel(ABC):
     # Stored call arguments
     _init_args: list[Any]
     _init_kwargs: dict[str, Any]
+    
+    # Kernel
+    _predict_kernel: Callable[[JXArray], JXArray]
 
     def __new__(cls: Type[T], *args, **kwargs) -> T:
         instance = super().__new__(cls)  # type: ignore
@@ -106,6 +110,10 @@ class MiniMLModel(ABC):
         self._dtype_name = _supported_types.get_inverse(dtype)  # type: ignore
         # Calculate total size
         self._buffer_size = sum(p.size for p in self._params)
+        
+        # Apply JIT to predict method
+        self._predict_kernel = self.predict
+        self.predict = jax.jit(self.predict)  # type: ignore
 
     @property
     def bound(self) -> bool:
@@ -247,6 +255,14 @@ class MiniMLModel(ABC):
             JXArray: The total loss.
         """
         return self.loss(y_true, y_pred) + reg_lambda * self.regularization_loss()
+    
+    @property
+    def predict_kernel(self) -> Callable[[JXArray], JXArray]:
+        """The non-JIT version of the predict method; use
+        to call inside other models, whenever JIT compilation
+        produces UnexpectedTracerError errors.
+        """
+        return self._predict_kernel
 
     @abstractmethod
     def predict(self, X: JXArray) -> JXArray:
@@ -279,7 +295,7 @@ class MiniMLModel(ABC):
 
         def _targ_fun(p: JXArray) -> JXArray:
             self._buffer = p
-            loss = self.total_loss(y, self.predict(X), reg_lambda)
+            loss = self.total_loss(y, self._predict_kernel(X), reg_lambda)
             return loss
 
         # Does the method require a jacobian?
