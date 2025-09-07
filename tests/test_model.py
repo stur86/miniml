@@ -38,11 +38,14 @@ def test_model(tmp_path: Path):
     m.bind()
 
     for p in m._params:
-        assert p.bound
+        assert p.param.bound
 
-    assert m._params[0] is m._M
-    assert m._params[1] is m._b
-    assert m._params[2] is m._c._c
+    assert m._params[0].param is m._M
+    assert m._params[0].path == "_M.v"
+    assert m._params[1].param is m._b
+    assert m._params[1].path == "_b.v"
+    assert m._params[2].param is m._c._c
+    assert m._params[2].path == "_c._c.v"
 
     m.randomize()
 
@@ -237,8 +240,11 @@ def test_model_list():
     assert isinstance(mlist._contents[0], M1)
     assert isinstance(mlist._contents[1], M2)
     assert len(mlist._get_inner_params()) == 2
-    assert mlist._get_inner_params()[0] == mlist._contents[0]._params[0]
-    assert mlist._get_inner_params()[1] == mlist._contents[1]._params[0]
+    
+    for i in range(2):
+        assert mlist._get_inner_params()[i].param is mlist._contents[i]._params[0].param
+        assert mlist._get_inner_params()[i].path == f"{i}." + mlist._contents[i]._params[0].path
+    
 
 def test_model_set_get_params():
     class M(MiniMLModel):
@@ -257,15 +263,27 @@ def test_model_set_get_params():
     assert m.size == 5
     
     assert len(params) == 2
-    assert list(params.keys()) == ['param_0', 'param_1']
-    assert np.array_equal(params['param_0'], jnp.array([0.0, 1.0], dtype=jnp.float32))
-    assert np.array_equal(params['param_1'], jnp.array([2.0, 3.0, 4.0], dtype=jnp.float32))
-    
+    assert list(params.keys()) == ['p1.v', 'p2.v']
+    assert np.array_equal(params['p1.v'], jnp.array([0.0, 1.0], dtype=jnp.float32))
+    assert np.array_equal(params['p2.v'], jnp.array([2.0, 3.0, 4.0], dtype=jnp.float32))
+
     # Now try setting instead
     new_params = {
-        'param_0': jnp.array([10.0, 20.0], dtype=jnp.float32),
-        'param_1': jnp.array([30.0, 40.0, 50.0], dtype=jnp.float32)
+        'p1.v': jnp.array([10.0, 20.0], dtype=jnp.float32),
+        'p2.v': jnp.array([30.0, 40.0, 50.0], dtype=jnp.float32)
     }
     m.set_params(new_params)
-    assert np.array_equal(m.p1.value, new_params['param_0'])
-    assert np.array_equal(m.p2.value, new_params['param_1'])
+    assert np.array_equal(m.p1.value, new_params['p1.v'])
+    assert np.array_equal(m.p2.value, new_params['p2.v'])
+    
+    # Try a non-existing parameter
+    with pytest.raises(MiniMLError, match="Parameter name not found:"):
+        m.set_params({'p3.v': jnp.array([1.0], dtype=jnp.float32)})
+        
+    # Try the wrong size
+    with pytest.raises(MiniMLError, match="Parameter size mismatch for"):
+        m.set_params({'p1.v': jnp.array([1.0], dtype=jnp.float32)})
+        
+    # Or the wrong dtype
+    with pytest.raises(MiniMLError, match="Parameter dtype mismatch for"):
+        m.set_params({'p1.v': jnp.array([1, 2], dtype=jnp.int32)})

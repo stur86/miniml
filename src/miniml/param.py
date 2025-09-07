@@ -1,4 +1,5 @@
 import numpy as np
+from dataclasses import dataclass
 from jax import Array as JXArray
 import jax.numpy as jnp
 from typing import Protocol
@@ -132,8 +133,16 @@ class MiniMLParam:
     def __repr__(self) -> str:
         return f"MiniMLParam[{self.dtype}] ({self.shape})"
     
-    def _get_inner_params(self) -> list["MiniMLParam"]:
-        return [self]
+    def _get_inner_params(self) -> list["MiniMLParamRef"]:
+        return [MiniMLParamRef("v", self)]
+
+@dataclass(frozen=True)
+class MiniMLParamRef:
+    path: str
+    param: MiniMLParam
+    
+    def as_child(self, parent_path: str) -> "MiniMLParamRef":
+        return MiniMLParamRef(f"{parent_path}.{self.path}", self.param)
 
 class MiniMLParamList:
     """A list of parameters"""
@@ -166,5 +175,6 @@ class MiniMLParamList:
         """Total length of the list."""
         return len(self._contents)
     
-    def _get_inner_params(self) -> list[MiniMLParam]:
-        return self._contents
+    def _get_inner_params(self) -> list[MiniMLParamRef]:
+        return [param._get_inner_params()[0].as_child(f"{i}") for i, param in enumerate(self._contents)]
+

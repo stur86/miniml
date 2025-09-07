@@ -74,3 +74,11 @@ def test_param_list():
     
     for p in plist:
         assert p in [p1, p2]
+        
+    prefs = plist._get_inner_params()
+    
+    assert len(prefs) == 2
+    assert prefs[0].param is p1
+    assert prefs[0].path == "0.v"
+    assert prefs[1].param is p2
+    assert prefs[1].path == "1.v"

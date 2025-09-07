@@ -32,6 +32,7 @@ nav:
   - fit.md
   - containers.md
   - nn.md
+  - composite_models.md
 
 plugins:
 - search

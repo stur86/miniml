@@ -5,12 +5,11 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable, Type, TypeVar
 import time
-import re
 import jax
 from jax import Array as JXArray
 import jax.numpy as jnp
 from numpy.typing import DTypeLike, NDArray
-from miniml.param import MiniMLParam, MiniMLError, _supported_types
+from miniml.param import MiniMLError, _supported_types, MiniMLParamRef
 from miniml.loss import LossFunction, squared_error_loss
 from scipy.optimize import minimize
 
@@ -19,7 +18,7 @@ from scipy.optimize import minimize
 @runtime_checkable
 class ParametrizedObject(Protocol):
 
-    def _get_inner_params(self) -> list[MiniMLParam]: ...
+    def _get_inner_params(self) -> list[MiniMLParamRef]: ...
 
 
 @dataclass
@@ -52,13 +51,13 @@ class MiniMLModel(ABC):
     _dtype_name: str
     _buffer_size: int
     _buffer: JXArray
-    _params: list[MiniMLParam]
+    _params: list[MiniMLParamRef]
     _loss_f: LossFunction | None = None
 
     # Stored call arguments
     _init_args: list[Any]
     _init_kwargs: dict[str, Any]
-    
+
     # Kernel
     _predict_kernel: Callable[[JXArray], JXArray]
 
@@ -92,13 +91,14 @@ class MiniMLModel(ABC):
         self._params = []
         for k, v in pfound:
             try:
-                self._params.extend(v._get_inner_params())
+                self._params.extend([ref.as_child(k) for ref in v._get_inner_params()])
             except Exception as e:
                 raise MiniMLError(f"Child member {k} was not properly initialized: {e}")
 
         # Scan for dtype consistency
         dtype: DTypeLike = None
-        for p in self._params:
+        for pref in self._params:
+            p = pref.param
             if dtype is None:
                 dtype = p.dtype
             elif dtype != p.dtype:
@@ -109,8 +109,8 @@ class MiniMLModel(ABC):
         self._dtype = dtype
         self._dtype_name = _supported_types.get_inverse(dtype)  # type: ignore
         # Calculate total size
-        self._buffer_size = sum(p.size for p in self._params)
-        
+        self._buffer_size = sum(pref.param.size for pref in self._params)
+
         # Apply JIT to predict method
         self._predict_kernel = self.predict
         self.predict = jax.jit(self.predict)  # type: ignore
@@ -174,8 +174,8 @@ class MiniMLModel(ABC):
         # Bind buffers to parameters
         i0 = 0
         for p in self._params:
-            p.bind(i0, self)
-            i0 += p.size
+            p.param.bind(i0, self)
+            i0 += p.param.size
 
     def randomize(self, seed: int | None = None) -> None:
         """Randomize the parameters of the model using JAX random generators.
@@ -233,7 +233,7 @@ class MiniMLModel(ABC):
         """
         reg_loss = jnp.array(0.0, dtype=jnp.dtype(self._dtype))
         for p in self._params:
-            reg_loss += p.regularization_loss()
+            reg_loss += p.param.regularization_loss()
         return reg_loss
 
     def total_loss(
@@ -255,7 +255,7 @@ class MiniMLModel(ABC):
             JXArray: The total loss.
         """
         return self.loss(y_true, y_pred) + reg_lambda * self.regularization_loss()
-    
+
     @property
     def predict_kernel(self) -> Callable[[JXArray], JXArray]:
         """The non-JIT version of the predict method; use
@@ -411,7 +411,7 @@ class MiniMLModel(ABC):
         Returns:
             dict[str, JXArray]: A dictionary mapping parameter names to their values.
         """
-        return {f"param_{i}": p.value.copy() for i, p in enumerate(self._params)}
+        return {p.path: p.param.value.copy() for p in self._params}
 
     def set_params(self, params: dict[str, JXArray]) -> None:
         """Set the model parameters from a dictionary of parameter names and their values.
@@ -419,20 +419,25 @@ class MiniMLModel(ABC):
         Args:
             params (dict[str, JXArray]): A dictionary mapping parameter names to their values.
         """
-        p_re = re.compile(r"param_(\d+)")
+        param_paths = [p.path for p in self._params]
 
         for key, val in params.items():
-            m = p_re.match(key)
-            if m is None:
-                raise MiniMLError(f"Invalid parameter name: {key}")
-            idx = int(m.group(1))
-            if idx < 0 or idx >= len(self._params):
-                raise MiniMLError(f"Parameter index out of range: {idx}")
-            p = self._params[idx]
+            idx = param_paths.index(key) if key in param_paths else -1
+            if idx < 0:
+                raise MiniMLError(f"Parameter name not found: {key}")
+            p = self._params[idx].param
+            if p.dtype != val.dtype:
+                raise MiniMLError(
+                    f"Parameter dtype mismatch for {key}: model has {p.dtype}, provided value has {val.dtype}"
+                )
+            if p.size != val.size:
+                raise MiniMLError(
+                    f"Parameter size mismatch for {key}: model has {p.size}, provided value has {val.size}"
+                )
             idx = slice(p._buf_i0, p._buf_i0 + p.size)
             self._buffer = self._buffer.at[idx].set(val.reshape(-1))
 
-    def _get_inner_params(self) -> list[MiniMLParam]:
+    def _get_inner_params(self) -> list[MiniMLParamRef]:
         return self._params
 
 
@@ -462,5 +467,5 @@ class MiniMLModelList:
         """Total length of the list."""
         return len(self._contents)
 
-    def _get_inner_params(self) -> list[MiniMLParam]:
-        return sum((m._get_inner_params() for m in self._contents), [])
+    def _get_inner_params(self) -> list[MiniMLParamRef]:
+        return [p.as_child(f"{i}") for i, m in enumerate(self._contents) for p in m._get_inner_params()]
