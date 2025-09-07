@@ -1,4 +1,5 @@
 import numpy as np
+from typing import Callable
 from abc import ABC, abstractmethod
 from pathlib import Path
 from dataclasses import dataclass
@@ -8,7 +9,7 @@ import jax
 from jax import Array as JXArray
 import jax.numpy as jnp
 from numpy.typing import DTypeLike, NDArray
-from miniml.param import MiniMLParam, MiniMLError, _supported_types
+from miniml.param import MiniMLError, _supported_types, MiniMLParamRef
 from miniml.loss import LossFunction, squared_error_loss
 from scipy.optimize import minimize
 
@@ -17,7 +18,7 @@ from scipy.optimize import minimize
 @runtime_checkable
 class ParametrizedObject(Protocol):
 
-    def _get_inner_params(self) -> list[MiniMLParam]: ...
+    def _get_inner_params(self) -> list[MiniMLParamRef]: ...
 
 
 @dataclass
@@ -50,12 +51,15 @@ class MiniMLModel(ABC):
     _dtype_name: str
     _buffer_size: int
     _buffer: JXArray
-    _params: list[MiniMLParam]
+    _params: list[MiniMLParamRef]
     _loss_f: LossFunction | None = None
 
     # Stored call arguments
     _init_args: list[Any]
     _init_kwargs: dict[str, Any]
+
+    # Kernel
+    _predict_kernel: Callable[[JXArray], JXArray]
 
     def __new__(cls: Type[T], *args, **kwargs) -> T:
         instance = super().__new__(cls)  # type: ignore
@@ -87,13 +91,14 @@ class MiniMLModel(ABC):
         self._params = []
         for k, v in pfound:
             try:
-                self._params.extend(v._get_inner_params())
+                self._params.extend([ref.as_child(k) for ref in v._get_inner_params()])
             except Exception as e:
                 raise MiniMLError(f"Child member {k} was not properly initialized: {e}")
 
         # Scan for dtype consistency
         dtype: DTypeLike = None
-        for p in self._params:
+        for pref in self._params:
+            p = pref.param
             if dtype is None:
                 dtype = p.dtype
             elif dtype != p.dtype:
@@ -104,7 +109,11 @@ class MiniMLModel(ABC):
         self._dtype = dtype
         self._dtype_name = _supported_types.get_inverse(dtype)  # type: ignore
         # Calculate total size
-        self._buffer_size = sum(p.size for p in self._params)
+        self._buffer_size = sum(pref.param.size for pref in self._params)
+
+        # Apply JIT to predict method
+        self._predict_kernel = self.predict
+        self.predict = jax.jit(self.predict)  # type: ignore
 
     @property
     def bound(self) -> bool:
@@ -114,6 +123,15 @@ class MiniMLModel(ABC):
             bool: True if the model parameters are bound, False otherwise.
         """
         return hasattr(self, "_buffer")
+
+    @property
+    def size(self) -> int:
+        """Get the total number of parameters in the model.
+
+        Returns:
+            int: The total number of parameters.
+        """
+        return self._buffer_size
 
     @property
     def ready(self) -> bool:
@@ -156,8 +174,8 @@ class MiniMLModel(ABC):
         # Bind buffers to parameters
         i0 = 0
         for p in self._params:
-            p.bind(i0, self)
-            i0 += p.size
+            p.param.bind(i0, self)
+            i0 += p.param.size
 
     def randomize(self, seed: int | None = None) -> None:
         """Randomize the parameters of the model using JAX random generators.
@@ -215,7 +233,7 @@ class MiniMLModel(ABC):
         """
         reg_loss = jnp.array(0.0, dtype=jnp.dtype(self._dtype))
         for p in self._params:
-            reg_loss += p.regularization_loss()
+            reg_loss += p.param.regularization_loss()
         return reg_loss
 
     def total_loss(
@@ -223,7 +241,7 @@ class MiniMLModel(ABC):
     ) -> JXArray:
         """Compute the total loss as the sum of prediction loss and regularization loss, with
         a strength parameter:
-        
+
         $$
         \\mathcal{L}(y, \\hat{y}) + \\lambda\\left(\\sum_i\\mathcal{R}_i(w_i)\\right)
         $$
@@ -238,6 +256,14 @@ class MiniMLModel(ABC):
         """
         return self.loss(y_true, y_pred) + reg_lambda * self.regularization_loss()
 
+    @property
+    def predict_kernel(self) -> Callable[[JXArray], JXArray]:
+        """The non-JIT version of the predict method; use
+        to call inside other models, whenever JIT compilation
+        produces UnexpectedTracerError errors.
+        """
+        return self._predict_kernel
+
     @abstractmethod
     def predict(self, X: JXArray) -> JXArray:
         pass
@@ -250,7 +276,7 @@ class MiniMLModel(ABC):
         fit_args: dict[str, Any] = {"method": "L-BFGS-B"},
     ) -> MiniMLFitResult:
         """Fit the model parameters to the data by minimizing the total loss.
-        See [the SciPy docs](https://docs.scipy.org/doc/scipy-1.16.1/reference/generated/scipy.optimize.minimize.html) 
+        See [the SciPy docs](https://docs.scipy.org/doc/scipy-1.16.1/reference/generated/scipy.optimize.minimize.html)
         for details on the optimization arguments.
 
         Args:
@@ -260,7 +286,7 @@ class MiniMLModel(ABC):
             fit_args (dict[str, Any], optional): Arguments for the optimizer.
                 Refer to the documentation for scipy.minimize for details.
                 Defaults to {"method": "L-BFGS-B"}.
-                
+
         Returns:
             MiniMLFitResult: An object containing information about the fitting process.
         """
@@ -269,14 +295,19 @@ class MiniMLModel(ABC):
 
         def _targ_fun(p: JXArray) -> JXArray:
             self._buffer = p
-            loss = self.total_loss(y, self.predict(X), reg_lambda)
+            loss = self.total_loss(y, self._predict_kernel(X), reg_lambda)
             return loss
-        
+
         # Does the method require a jacobian?
         method: str = fit_args.get("method", "L-BFGS-B")
         requires_jac = method not in {"Nelder-Mead", "Powell"}
         # Does it require a hessian product?
-        requires_hessp = method in {"Newton-CG", "trust-ncg", "trust-krylov", "trust-constr"}
+        requires_hessp = method in {
+            "Newton-CG",
+            "trust-ncg",
+            "trust-krylov",
+            "trust-constr",
+        }
         # Does it require directly a hessian?
         requires_hess = method in {"dogleg", "trust-exact"}
 
@@ -284,11 +315,13 @@ class MiniMLModel(ABC):
             _targ_fun_opt = jax.jit(jax.value_and_grad(_targ_fun))
         else:
             _targ_fun_opt = jax.jit(_targ_fun)
-        
+
         if requires_hessp:
             _targ_jac = jax.jit(jax.grad(_targ_fun))
+
             def jac_dir(x, p):
                 return _targ_jac(x) @ p
+
             _targ_hessp = jax.jit(jax.grad(jac_dir, argnums=0))
             fit_args["hessp"] = _targ_hessp
         if requires_hess:
@@ -305,7 +338,7 @@ class MiniMLModel(ABC):
             niter=sol.nit,
             nfev=sol.nfev,
             njev=sol.get("njev", None),
-            nhev=sol.get("nhev", None)
+            nhev=sol.get("nhev", None),
         )
 
     def save(self, filename: str | Path) -> None:
@@ -343,11 +376,11 @@ class MiniMLModel(ABC):
         load_dict = np.load(filename, allow_pickle=True)
         mdata = load_dict["metadata"][0]
         assert mdata["model_name"] == cls.__name__, "Model is not same class"
-        
+
         init = load_dict["init"][0]
         args = init["args"]
-        kwargs = init["kwargs"]    
-        
+        kwargs = init["kwargs"]
+
         model = cls(*args, **kwargs)  # type: ignore
         model.bind()
         model.set_buffer(load_dict["buffer"])
@@ -371,13 +404,46 @@ class MiniMLModel(ABC):
             )
         self._buffer = buf
 
-    def _get_inner_params(self) -> list[MiniMLParam]:
+    def get_params(self) -> dict[str, JXArray]:
+        """Get a dictionary of parameter names and their values.
+        All values are copies of the internal buffers.
+
+        Returns:
+            dict[str, JXArray]: A dictionary mapping parameter names to their values.
+        """
+        return {p.path: p.param.value.copy() for p in self._params}
+
+    def set_params(self, params: dict[str, JXArray]) -> None:
+        """Set the model parameters from a dictionary of parameter names and their values.
+
+        Args:
+            params (dict[str, JXArray]): A dictionary mapping parameter names to their values.
+        """
+        param_paths = [p.path for p in self._params]
+
+        for key, val in params.items():
+            idx = param_paths.index(key) if key in param_paths else -1
+            if idx < 0:
+                raise MiniMLError(f"Parameter name not found: {key}")
+            p = self._params[idx].param
+            if p.dtype != val.dtype:
+                raise MiniMLError(
+                    f"Parameter dtype mismatch for {key}: model has {p.dtype}, provided value has {val.dtype}"
+                )
+            if p.size != val.size:
+                raise MiniMLError(
+                    f"Parameter size mismatch for {key}: model has {p.size}, provided value has {val.size}"
+                )
+            idx = slice(p._buf_i0, p._buf_i0 + p.size)
+            self._buffer = self._buffer.at[idx].set(val.reshape(-1))
+
+    def _get_inner_params(self) -> list[MiniMLParamRef]:
         return self._params
 
 
 class MiniMLModelList:
     """A list of MiniMLModels."""
-    
+
     _contents: list[MiniMLModel]
 
     def __init__(self, models: list[MiniMLModel]) -> None:
@@ -401,5 +467,5 @@ class MiniMLModelList:
         """Total length of the list."""
         return len(self._contents)
 
-    def _get_inner_params(self) -> list[MiniMLParam]:
-        return sum((m._get_inner_params() for m in self._contents), [])
+    def _get_inner_params(self) -> list[MiniMLParamRef]:
+        return [p.as_child(f"{i}") for i, m in enumerate(self._contents) for p in m._get_inner_params()]

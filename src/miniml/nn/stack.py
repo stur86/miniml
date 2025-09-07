@@ -1,3 +1,4 @@
+from jax import Array
 from miniml.model import MiniMLModel, MiniMLModelList
 
 class Stack(MiniMLModel):
@@ -9,7 +10,7 @@ class Stack(MiniMLModel):
         self._model_list = MiniMLModelList(models)
         super().__init__()
         
-    def predict(self, X):
+    def predict(self, X: Array) -> Array:
         for model in self._model_list.contents:
-            X = model.predict(X)
+            X = model.predict_kernel(X)
         return X
