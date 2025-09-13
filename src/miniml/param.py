@@ -218,14 +218,7 @@ class MiniMLParamList:
     def contents(self) -> list[MiniMLParam]:
         """The list of parameters."""
         return self._contents
-
-    @property
-    def regularization_loss(self) -> JXArray:
-        """Returns the regularization loss for all parameters in the list."""
-        return jnp.array(
-            [param.regularization_loss() for param in self._contents]
-        ).sum()
-
+        
     def __getitem__(self, index: int) -> MiniMLParam:
         """Access a parameter by index."""
         return self._contents[index]

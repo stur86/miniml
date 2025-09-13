@@ -28,5 +28,5 @@ class Linear(MiniMLModel):
 
         super().__init__(loss)
 
-    def predict(self, X: JXArray) -> JXArray:
-        return X @ self._W.value + self._b.value
+    def predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+        return X @ self._W(buffer) + self._b(buffer)

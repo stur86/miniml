@@ -54,5 +54,5 @@ class MLP(MiniMLModel):
 
         super().__init__()
 
-    def predict(self, X: JXArray) -> JXArray:
-        return self._layer_stack.predict_kernel(X)
+    def predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+        return self._layer_stack.predict_kernel(X, buffer)

@@ -55,5 +55,5 @@ class Activation(MiniMLModel):
         self._act = f
         super().__init__(loss=None)
 
-    def predict(self, X: JXArray) -> JXArray:
+    def predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
         return self._act(X)
