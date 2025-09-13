@@ -172,6 +172,18 @@ class MiniMLParam:
         else:
             self._validate_buffer(i0, buffer)
         return buffer[i0:i1].reshape(self.shape)
+    
+    @property
+    def value(self) -> JXArray:
+        """Get the value of the parameter from the bound buffer.
+        Syntactic sugar for `param()`.
+
+        Raises:
+            MiniMLError: If the parameter is not bound.
+        Returns:
+            JXArray: The value of the parameter.
+        """
+        return self()
 
     def __repr__(self) -> str:
         return f"MiniMLParam[{self.dtype}] ({self.shape})"
