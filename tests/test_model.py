@@ -46,6 +46,8 @@ def test_model(tmp_path: Path):
     assert m._params[1].path == "_b.v"
     assert m._params[2].param is m._c._c
     assert m._params[2].path == "_c._c.v"
+    
+    assert m.param_names == ['_M.v', '_b.v', '_c._c.v']
 
     m.randomize()
 

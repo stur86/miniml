@@ -159,6 +159,15 @@ class MiniMLModel(ABC):
             str: The name of the data type.
         """
         return self._dtype_name
+    
+    @property
+    def param_names(self) -> list[str]:
+        """Get the list of parameter names in the model.
+
+        Returns:
+            list[str]: A list of parameter names.
+        """
+        return [p.path for p in self._params]
 
     def bind(self) -> None:
         """Bind the model parameters to a contiguous buffer."""
@@ -267,6 +276,21 @@ class MiniMLModel(ABC):
     @abstractmethod
     def predict(self, X: JXArray) -> JXArray:
         pass
+    
+    def _pre_fit(self, X: JXArray, y: JXArray) -> set[str]:
+        """Initialize the fit by pre-fitting some parameters based on the data.
+        This method is called once before the fitting process starts.
+        It should return a set of parameter names that have been initialized,
+        and these will not be optimized in the successive fitting procedure.
+
+        Args:
+            X (JXArray): Input features.
+            y (JXArray): Target values.
+
+        Returns:
+            set[str]: A set of parameter names that have been initialized.
+        """
+        return set()
 
     def fit(
         self,
@@ -292,9 +316,31 @@ class MiniMLModel(ABC):
         """
         if not self.bound:
             self.bind()
+            
+        all_params = set(self.param_names)
+        prefit_params = set(self._pre_fit(X, y))
+        fit_params = all_params - prefit_params
+
+        if len(fit_params) == 0:
+            return MiniMLFitResult(
+                success=True,
+                message="No parameters left to fit after pre-fitting",
+                loss=float(self.total_loss(y, self._predict_kernel(X), reg_lambda)),
+                niter=0,
+                nfev=0,
+            )
+            
+        # Create a mask for the parameters to fit
+        i0 = 0
+        mask_params: list[JXArray] = []
+        for p in self._params:
+            if p.path in fit_params:
+                mask_params.append(jnp.arange(i0, i0 + p.param.size))
+            i0 += p.param.size
+        p_mask = jnp.concatenate(mask_params)
 
         def _targ_fun(p: JXArray) -> JXArray:
-            self._buffer = p
+            self._buffer = self._buffer.at[p_mask].set(p)
             loss = self.total_loss(y, self._predict_kernel(X), reg_lambda)
             return loss
 
@@ -312,24 +358,25 @@ class MiniMLModel(ABC):
         requires_hess = method in {"dogleg", "trust-exact"}
 
         if requires_jac:
-            _targ_fun_opt = jax.jit(jax.value_and_grad(_targ_fun))
+            _targ_fun_opt = jax.jit(jax.value_and_grad(_targ_fun), inline=True)
         else:
-            _targ_fun_opt = jax.jit(_targ_fun)
+            _targ_fun_opt = jax.jit(_targ_fun, inline=True)
 
         if requires_hessp:
-            _targ_jac = jax.jit(jax.grad(_targ_fun))
+            _targ_jac = jax.jit(jax.grad(_targ_fun), inline=True)
 
             def jac_dir(x, p):
                 return _targ_jac(x) @ p
 
-            _targ_hessp = jax.jit(jax.grad(jac_dir, argnums=0))
+            _targ_hessp = jax.jit(jax.grad(jac_dir, argnums=0), inline=True)
             fit_args["hessp"] = _targ_hessp
         if requires_hess:
-            _targ_hess = jax.jit(jax.hessian(_targ_fun))
+            _targ_hess = jax.jit(jax.hessian(_targ_fun), inline=True)
             fit_args["hess"] = _targ_hess
+        p0 = self._buffer[p_mask]
 
-        sol = minimize(_targ_fun_opt, self._buffer, jac=requires_jac, **fit_args)
-        self._buffer = jnp.array(sol.x, dtype=jnp.dtype(self._dtype))
+        sol = minimize(_targ_fun_opt, p0, jac=requires_jac, **fit_args)
+        self._buffer = self._buffer.at[p_mask].set(sol.x)
 
         return MiniMLFitResult(
             success=sol.success,
