@@ -21,12 +21,16 @@ def test_param():
     assert not p.bound
     p.bind(0, bufc)
     assert p.bound
-    assert np.array_equal(p.value, bufc._buffer[0:6].reshape((3, 2)))
+    assert np.array_equal(p(), bufc._buffer[0:6].reshape((3, 2)))
     p.unbind()
 
     p.bind(2, bufc)
     assert p.bound
-    assert np.array_equal(p.value, bufc._buffer[2:8].reshape((3, 2)))
+    assert np.array_equal(p(), bufc._buffer[2:8].reshape((3, 2)))
+    
+    # Try by passing an explicit buffer
+    test_buf = jnp.arange(10, -1, -1, dtype=jnp.float32)
+    assert np.array_equal(p(test_buf), test_buf[2:8].reshape((3, 2)))
 
 def test_param_errors():
     
@@ -52,7 +56,7 @@ def test_param_errors():
     p.unbind()
     
     with pytest.raises(MiniMLError, match="Parameter not bound to buffer"):
-        _ = p.value
+        p()
         
 def test_param_regularization():
     p = MiniMLParam((3, 2), reg_loss=lambda x: jnp.sum(x**2))
@@ -61,6 +65,10 @@ def test_param_regularization():
     p.bind(0, bufc)
     bufc._buffer = jnp.arange(10, dtype=jnp.float32)
     assert np.isclose(p.regularization_loss(), jnp.sum(bufc._buffer[0:6]**2))
+    
+    # Try with explicit buffer
+    test_buf = jnp.zeros((10,), dtype=jnp.float32)
+    assert np.isclose(p.regularization_loss(test_buf), 0.0)
         
 def test_param_list():
     p1 = MiniMLParam((5,2))
