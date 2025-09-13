@@ -297,3 +297,31 @@ def test_model_set_get_params():
     # Or the wrong dtype
     with pytest.raises(MiniMLError, match="Parameter dtype mismatch for"):
         m.set_params({'p1.v': jnp.array([1, 2], dtype=jnp.int32)})
+
+def test_pre_fit():
+    class M(MiniMLModel):
+        def __init__(self):
+            self.p1 = MiniMLParam((1,))
+            self.p2 = MiniMLParam((1,))
+            super().__init__()
+
+        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+            return self.p1(buffer) * X + self.p2(buffer)
+
+        def _pre_fit(self, X: JXArray, y: JXArray) -> set[str]:
+            # Fix p1 to 2.0 based on data
+            self._buffer = self._buffer.at[0].set(0.0)
+            return {"p1.v"}
+
+    # Data: y = x
+    X = jnp.linspace(0, 10, 20)
+    y = X
+    model = M()
+    model.bind()
+    model.randomize(seed=42)
+    
+    # The model should fix the first parameter to 0,
+    # which means the second should be the average of y
+    model.fit(X, y)
+    assert jnp.isclose(model.p1()[0], 0.0, atol=1e-5)
+    assert jnp.isclose(model.p2()[0], y.mean(), atol=1e-5)

@@ -14,9 +14,9 @@ class LinearModel(MiniMLModel):
         self.b = MiniMLParam((n_out,))
         super().__init__()
 
-    def predict(self, X):
-        return X@self.A.value+self.b.value
-
+    def _predict_kernel(self, X, buffer):
+        return X@self.A(buffer)+self.b(buffer)
+        
 lin_model = LinearModel(X.shape[1], y.shape[1])
 lin_model.randomize()
 lin_model.fit(X, y)

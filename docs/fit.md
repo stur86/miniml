@@ -5,8 +5,7 @@ to find the gradient of the model's `.total_loss` (given a regularization streng
 for maximum efficiency, which can be often more powerful than classic gradient descent for small models where it's feasible to use them. For example, the default optimization method is `L-BFGS-B`: this method computes an approximation to the Hermitian and thus scales with the square of the number of parameter. That would be forbidding for very large models, but it also gives excellent convergence for smaller ones where it's more affordable. [You can check SciPy's documentation for the supported methods and other arguments](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.minimize.html).
 
 !!! note
-    Different SciPy methods require different inputs. Some require only the value of the objective function, others the jacobian, others the Hessian
-    or the product of the Hessian with a vector $\mathbf{p}$. MiniML handles all of this and produces the necessary functions with Jax, then optimizes them with `jax.jit` before passing them to `.minimize`.
+    Different SciPy methods require different inputs. Some require only the value of the objective function, others the jacobian, others the Hessian or the product of the Hessian with a vector $\mathbf{p}$. MiniML handles all of this and produces the necessary functions with Jax, then optimizes them with `jax.jit` before passing them to `.minimize`.
 
 ## Fitting success
 
@@ -18,6 +17,10 @@ The `.fit` method returns a result value containing information such as whether 
     print(f"Fit converged: {res.success}")
     print(f"Final loss: {res.loss}")
 ```
+
+## Pre-fitting
+
+In some cases, one might want to fix certain parameters based on $X$ and $y$ without leaving them to the optimization process. This can be done by overloading the method `_pre_fit` in your model. `_pre_fit` takes the same arguments as `fit` and is expected to return a set of parameter names. It can do anything inside; all parameters in the returned set will be *fixed* and ignored in the subsequent optimization process.
 
 ## Recipe: batch fitting
 

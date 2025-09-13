@@ -12,10 +12,10 @@ class NN(MiniMLModel):
         self._act = Activation(activation)
         self._L2 = Linear(n_hidden, n_out)
 
-    def predict(self, X):
-        X = self._L1.predict_kernel(X)
-        X = self._act.predict_kernel(X)
-        return self._L2.predict_kernel(X)
+    def _predict_kernel(self, X, buffer):
+        X = self._L1._predict_kernel(X, buffer)
+        X = self._act._predict_kernel(X, buffer)
+        return self._L2._predict_kernel(X, buffer)
 ```
 
-Notice the use of `predict_kernel` instead of `predict`. This is the original, "raw" version of predict that is *not* JIT compiled by Jax. It's useful to call it when composing models because sometimes nesting JIT functions can cause issues of leaking variables in Jax (for more info see for example [this Jax documentation page](https://docs.jax.dev/en/latest/errors.html#jax.errors.UnexpectedTracerError)).
+Notice the use of `_predict_kernel` instead of `predict`. It's important to use it and pass around the `buffer` argument because this keeps the function pure and compatible with Jax's traceability rules (for more info see for example [this Jax documentation page](https://docs.jax.dev/en/latest/errors.html#jax.errors.UnexpectedTracerError)).
