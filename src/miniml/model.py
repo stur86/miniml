@@ -265,7 +265,7 @@ class MiniMLModel(ABC):
         return self.loss(y_true, y_pred) + reg_lambda * self.regularization_loss(buffer=buffer)
 
     @abstractmethod
-    def predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+    def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
         pass
 
     # @jax.jit
@@ -278,7 +278,7 @@ class MiniMLModel(ABC):
         Returns:
             JXArray: Predicted output.
         """
-        return self.predict_kernel(X, self._buffer)
+        return self._predict_kernel(X, self._buffer)
     
     def __call__(self, X: JXArray) -> JXArray:
         """Syntactic sugar for predict."""
@@ -350,7 +350,7 @@ class MiniMLModel(ABC):
         def _targ_fun(p: JXArray) -> JXArray:
             nonlocal buffer
             buf_in = buffer.at[p_mask].set(p)
-            y_pred = self.predict_kernel(X, buf_in)
+            y_pred = self._predict_kernel(X, buf_in)
             loss = self.total_loss(y, y_pred, reg_lambda, buf_in)
             return loss
 

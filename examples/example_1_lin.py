@@ -45,7 +45,7 @@ def _(A, MiniMLModel, MiniMLParam, X, b, mo, y):
             self.b = MiniMLParam((n_out,))
             super().__init__()
 
-        def predict_kernel(self, X, buffer):
+        def _predict_kernel(self, X, buffer):
             return X@self.A(buffer)+self.b(buffer)
 
     lin_model = LinearModel(X.shape[1], y.shape[1])

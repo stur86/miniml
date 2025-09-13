@@ -53,7 +53,7 @@ def _(CrossEntropyLogLoss, LNormRegularization, MiniMLModel, MiniMLParam, jnp):
             self.M = MiniMLParam((6,1), reg_loss=LNormRegularization(p=2, root=False))
             super().__init__(CrossEntropyLogLoss(zero_ref=True))
 
-        def predict_kernel(self, X, buf):
+        def _predict_kernel(self, X, buf):
             # Augment X with polynomial features
             X_aug = jnp.array([jnp.ones(len(X)), X[:,0], X[:,1], X[:,0]**2, X[:,0]*X[:,1], X[:,1]**2])
             return (X_aug.T@self.M(buf))

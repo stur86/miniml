@@ -15,7 +15,7 @@ def test_model_basic(tmp_path: Path):
             self._c = MiniMLParam((1,))
             super().__init__()
             
-        def predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
             return self._c(buffer)
 
 
@@ -28,10 +28,10 @@ def test_model_basic(tmp_path: Path):
 
             super().__init__()
 
-        def predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
             M = self._M(buffer)
             b = self._b(buffer)
-            c = self._c.predict_kernel(X, buffer)
+            c = self._c._predict_kernel(X, buffer)
             return X @ M + b + c
 
     m = LinearModel()
@@ -82,7 +82,7 @@ def test_dtype_mismatch():
             self.p2 = MiniMLParam((2,), dtype=np.float64)
             super().__init__()
 
-        def predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
             return self.p1(buffer) + self.p2(buffer)
 
     with pytest.raises(MiniMLError, match="parameter dtype mismatch"):
@@ -95,16 +95,16 @@ def test_child_model_no_super():
             self.p = MiniMLParam((1,))
             # Forgot super().__init__()
 
-        def predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
-            return super().predict_kernel(X, buffer)
+        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+            return super()._predict_kernel(X, buffer)
 
     class Parent(MiniMLModel):
         def __init__(self):
             self.child = BadChild()
             super().__init__()
 
-        def predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
-            return super().predict_kernel(X, buffer)
+        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+            return super()._predict_kernel(X, buffer)
 
     with pytest.raises(MiniMLError, match="was not properly initialized"):
         Parent()
@@ -116,8 +116,8 @@ def test_save_before_bind(tmp_path: Path):
             self.p = MiniMLParam((1,))
             super().__init__()
 
-        def predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
-            return super().predict_kernel(X, buffer)
+        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+            return super()._predict_kernel(X, buffer)
 
     m = M()
     with pytest.raises(MiniMLError, match="bound to buffers; can not save"):
@@ -130,8 +130,8 @@ def test_load_before_bind(tmp_path: Path):
             self.p = MiniMLParam((n,))
             super().__init__()
 
-        def predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
-            return super().predict_kernel(X, buffer)
+        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+            return super()._predict_kernel(X, buffer)
 
     m = M(n=2)
     m.bind()
@@ -178,7 +178,7 @@ def test_linear_model_fit_no_reg(method: str):
             self.b = MiniMLParam((1,))
             super().__init__()
 
-        def predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
             return self.a(buffer) * X + self.b(buffer)
 
     # Generate data: y = 2x + 1
@@ -204,7 +204,7 @@ def test_linear_model_fit_with_l2_reg(method: str):
             self.b = MiniMLParam((1,))
             super().__init__()
 
-        def predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
             return self.a(buffer) * X + self.b(buffer)
 
     # Data: y = 2x + 1
@@ -234,16 +234,16 @@ def test_model_list():
             self.p = MiniMLParam((1,))
             super().__init__()
 
-        def predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
-            return super().predict_kernel(X, buffer)
+        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+            return super()._predict_kernel(X, buffer)
 
     class M2(MiniMLModel):
         def __init__(self):
             self.p = MiniMLParam((2,))
             super().__init__()
         
-        def predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
-            return super().predict_kernel(X, buffer)
+        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+            return super()._predict_kernel(X, buffer)
 
     mlist = MiniMLModelList([M1(), M2()])
     assert len(mlist._contents) == 2
@@ -263,8 +263,8 @@ def test_model_set_get_params():
             self.p2 = MiniMLParam((3,))
             super().__init__()
 
-        def predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
-            return super().predict_kernel(X, buffer)
+        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+            return super()._predict_kernel(X, buffer)
 
     m = M()
     m.bind()

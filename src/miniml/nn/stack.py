@@ -10,7 +10,7 @@ class Stack(MiniMLModel):
         self._model_list = MiniMLModelList(models)
         super().__init__()
 
-    def predict_kernel(self, X: Array, buffer: Array) -> Array:
+    def _predict_kernel(self, X: Array, buffer: Array) -> Array:
         for model in self._model_list.contents:
-            X = model.predict_kernel(X, buffer)
+            X = model._predict_kernel(X, buffer)
         return X
