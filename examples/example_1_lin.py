@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.15.0"
+__generated_with = "0.15.2"
 app = marimo.App(width="medium")
 
 
@@ -9,7 +9,7 @@ def _():
     import marimo as mo
     import numpy as np
     import jax.numpy as jnp
-    from miniml.model import MiniMLModel, MiniMLParam
+    from miniml import MiniMLModel, MiniMLParam
     import seaborn as sns
     return MiniMLModel, MiniMLParam, jnp, mo, np, sns
 
@@ -45,8 +45,8 @@ def _(A, MiniMLModel, MiniMLParam, X, b, mo, y):
             self.b = MiniMLParam((n_out,))
             super().__init__()
 
-        def predict(self, X):
-            return X@self.A.value+self.b.value
+        def predict_kernel(self, X, buffer):
+            return X@self.A(buffer)+self.b(buffer)
 
     lin_model = LinearModel(X.shape[1], y.shape[1])
     lin_model.randomize()

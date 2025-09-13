@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.15.0"
+__generated_with = "0.15.2"
 app = marimo.App(width="medium")
 
 
@@ -50,13 +50,13 @@ def _(jnp, np, plt, sns):
 def _(CrossEntropyLogLoss, LNormRegularization, MiniMLModel, MiniMLParam, jnp):
     class LogisticRegressor(MiniMLModel):
         def __init__(self):
-            self.M = MiniMLParam((6,1), reg_loss=LNormRegularization(k=2, root=False))
+            self.M = MiniMLParam((6,1), reg_loss=LNormRegularization(p=2, root=False))
             super().__init__(CrossEntropyLogLoss(zero_ref=True))
 
-        def predict(self, X):
+        def predict_kernel(self, X, buf):
             # Augment X with polynomial features
             X_aug = jnp.array([jnp.ones(len(X)), X[:,0], X[:,1], X[:,0]**2, X[:,0]*X[:,1], X[:,1]**2])
-            return (X_aug.T@self.M.value)
+            return (X_aug.T@self.M(buf))
     return (LogisticRegressor,)
 
 
