@@ -14,8 +14,8 @@ class LinearModel(MiniMLModel):
         self.b = MiniMLParam((n_out,))
         super().__init__()
 
-    def predict(self, X):
-        return X@self.A.value+self.b.value
+    def _predict_kernel(self, X, buffer):
+        return X@self.A(buffer)+self.b(buffer)
 
 if __name__ == "__main__":
     import numpy as np
@@ -70,14 +70,26 @@ The constructor structure is extremely important:
 
 If either of these things aren't done, the model won't work. Parameters are tensors initialized by passing the shape as a tuple of integers, and optionally the `jax.numpy.dtype` and the regularization loss (see [regularization loss](loss.md#regularization-loss) for more details)
 
-#### Predict method implementation
+#### Predict kernel implementation
 
 ```py
-def predict(self, X):
-    return X@self.A.value+self.b.value
+def _predict_kernel(self, X, buffer):
+    return X@self.A(buffer)+self.b(buffer)
 ```
 
-`MiniMLModel` is an abstract base class with `.predict` as an abstract method, meaning any child class has to provide its implementation of it. This is the "forward" inference method: just take the input and return the output. `X` should be a Jax array, and the parameters can be accessed by the member `.value`; they will also be Jax arrays. Write this function sticking to Jax philosophy for differentiability (use Jax functions and functional constructs).
+`MiniMLModel` is an abstract base class with `._predict_kernel` as an abstract method, meaning any child class has to provide its implementation of it. This is the "forward" inference method. It takes in the input and a buffer (which contains all the model's parameters), and it must return the output.
+
+!!! note
+    The parameter `buffer` is necessary because Jax requires all differentiable functions to be "pure", meaning they can't modify state.
+    This means every time `_predict_kernel` is called (inside `predict` or `fit`), it gets passed an array with all the parameters it needs
+    to use. When implementing `_predict_kernel` you must take care to pass this array forward to all parameters and/or child models so that they can also use it! This means:
+
+    * for parameters, retrieve their value by calling them with the buffer as argument (as in `self.A(buffer)`);
+
+    * for models, if there are any, call them using their own `_predict_kernel` methods passing the buffer argument in the same way it was passed to this one.
+
+`X` should be a Jax array, and the parameters can be accessed by calling them with the buffer as an argument; they will also be Jax arrays.
+If any parameter is not called this way it will not use the correct values during fitting. Write this function sticking to Jax philosophy for differentiability (use Jax functions and functional constructs).
 
 #### Example data
 

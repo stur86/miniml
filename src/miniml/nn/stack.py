@@ -9,8 +9,8 @@ class Stack(MiniMLModel):
             raise ValueError("Stack must contain at least one model")
         self._model_list = MiniMLModelList(models)
         super().__init__()
-        
-    def predict(self, X: Array) -> Array:
+
+    def _predict_kernel(self, X: Array, buffer: Array) -> Array:
         for model in self._model_list.contents:
-            X = model.predict_kernel(X)
+            X = model._predict_kernel(X, buffer)
         return X

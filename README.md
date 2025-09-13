@@ -18,14 +18,17 @@ class LinearModel(MiniMLModel):
         self.b = MiniMLParam((n_out,))
         super().__init__()
 
-    def predict(self, X):
-        return X@self.A.value+self.b.value
+    def _predict_kernel(self, X, buffer):
+        return X@self.A(buffer)+self.b(buffer)
 
 lin_model = LinearModel(X.shape[1], y.shape[1])
 lin_model.randomize()
 lin_model.fit(X, y)
 y_hat = lin_model.predict(X)
+
 ```
+
+Note that calling a parameter with the buffer as an argument returns the value of that parameter.
 
 ## Installation
 
@@ -45,7 +48,7 @@ To define a model in MiniML, subclass `MiniMLModel` and define your parameters a
 * the `super().__init__()` constructor is called at the end.
 
 
-Then, implement the `predict` method, which takes an input array and returns the model's prediction. After instantiating your model, call `bind()` to initialize parameter buffers, or use directly `randomize()` to initialize parameter values. You can then use methods like `fit`, `save`, and `load`.
+Then, implement the internal `_predict_kernel` method, which takes an input array as well as a memory buffer containing the parameters and returns the model's prediction. After instantiating your model, call `bind()` to initialize parameter buffers, or use directly `randomize()` to initialize parameter values. You can then use methods like `fit`, `save`, and `load`.
 
 ### Example: Linear Model
 
@@ -59,8 +62,9 @@ class LinearModel(MiniMLModel):
         self.a = MiniMLParam((1,))
         self.b = MiniMLParam((1,))
         super().__init__()
-    def predict(self, X):
-        return self.a.value * X + self.b.value
+
+    def _predict_kernel(self, X, buffer):
+        return X@self.A(buffer)+self.b(buffer)
 
 # Create and bind the model
 model = LinearModel()
@@ -79,7 +83,7 @@ model.load('model.npz')
 
 ### Nested Models
 
-You can compose models by including other `MiniMLModel` instances as attributes. For example:
+You can compose models by including other `MiniMLModel` instances as attributes. In this case, remember to always call child models via their own `_predict_kernel` methods too. For example:
 
 ```python
 class ConstantModel(MiniMLModel):
@@ -88,8 +92,8 @@ class ConstantModel(MiniMLModel):
         self._c = MiniMLParam((1,))
         super().__init__()
 
-    def predict(self, X):
-        return self._c.value
+    def _predict_kernel(self, X, buffer):
+        return self._c(buffer)
 
 class LinearWithConstant(MiniMLModel):
     def __init__(self):
@@ -98,8 +102,8 @@ class LinearWithConstant(MiniMLModel):
         self._c = ConstantModel()
         super().__init__()
 
-    def predict(self, X):
-        return self._M.value @ X + self._b.value[:, None] + self._c.predict(X)
+    def _predict_kernel(self, X, buffer):
+        return self._M(buffer) @ X + self._b(buffer)[:, None] + self._c._predict_kernel(X, buffer)
 ```
 
 See [the full documentation](https://stur86.github.io/miniml/).

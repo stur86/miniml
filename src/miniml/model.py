@@ -1,5 +1,4 @@
 import numpy as np
-from typing import Callable
 from abc import ABC, abstractmethod
 from pathlib import Path
 from dataclasses import dataclass
@@ -58,9 +57,6 @@ class MiniMLModel(ABC):
     _init_args: list[Any]
     _init_kwargs: dict[str, Any]
 
-    # Kernel
-    _predict_kernel: Callable[[JXArray], JXArray]
-
     def __new__(cls: Type[T], *args, **kwargs) -> T:
         instance = super().__new__(cls)  # type: ignore
         instance._init_args = list(args)
@@ -111,10 +107,6 @@ class MiniMLModel(ABC):
         # Calculate total size
         self._buffer_size = sum(pref.param.size for pref in self._params)
 
-        # Apply JIT to predict method
-        self._predict_kernel = self.predict
-        self.predict = jax.jit(self.predict)  # type: ignore
-
     @property
     def bound(self) -> bool:
         """Check if the model parameters are bound to a buffer.
@@ -159,6 +151,15 @@ class MiniMLModel(ABC):
             str: The name of the data type.
         """
         return self._dtype_name
+    
+    @property
+    def param_names(self) -> list[str]:
+        """Get the list of parameter names in the model.
+
+        Returns:
+            list[str]: A list of parameter names.
+        """
+        return [p.path for p in self._params]
 
     def bind(self) -> None:
         """Bind the model parameters to a contiguous buffer."""
@@ -225,19 +226,24 @@ class MiniMLModel(ABC):
             return jnp.array(0.0, dtype=jnp.dtype(self._dtype))
         return self._loss_f(y_true, y_pred)
 
-    def regularization_loss(self) -> JXArray:
+    def regularization_loss(self, buffer: JXArray | None = None) -> JXArray:
         """Compute the total regularization loss $\\sum_i\\mathcal{R}_i(w_i)$ for all parameters and child models.
+        
+        Args:
+            buffer (JXArray | None, optional): An optional buffer to use instead of the internal one. 
+                Defaults to None.
 
         Returns:
             JXArray: The total regularization loss.
         """
         reg_loss = jnp.array(0.0, dtype=jnp.dtype(self._dtype))
         for p in self._params:
-            reg_loss += p.param.regularization_loss()
+            reg_loss += p.param.regularization_loss(buffer=buffer)
         return reg_loss
 
     def total_loss(
-        self, y_true: JXArray, y_pred: JXArray, reg_lambda: float = 1.0
+        self, y_true: JXArray, y_pred: JXArray, reg_lambda: float = 1.0,
+        buffer: JXArray | None = None
     ) -> JXArray:
         """Compute the total loss as the sum of prediction loss and regularization loss, with
         a strength parameter:
@@ -250,23 +256,48 @@ class MiniMLModel(ABC):
             y_true (JXArray): Ground truth values.
             y_pred (JXArray): Predicted values.
             reg_lambda (float, optional): Regularization strength. Defaults to 1.0.
+            buffer (JXArray | None, optional): An optional buffer to use instead of the internal one. 
+                Defaults to None.
 
         Returns:
             JXArray: The total loss.
         """
-        return self.loss(y_true, y_pred) + reg_lambda * self.regularization_loss()
-
-    @property
-    def predict_kernel(self) -> Callable[[JXArray], JXArray]:
-        """The non-JIT version of the predict method; use
-        to call inside other models, whenever JIT compilation
-        produces UnexpectedTracerError errors.
-        """
-        return self._predict_kernel
+        return self.loss(y_true, y_pred) + reg_lambda * self.regularization_loss(buffer=buffer)
 
     @abstractmethod
-    def predict(self, X: JXArray) -> JXArray:
+    def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
         pass
+
+    # @jax.jit
+    def predict(self, X: JXArray) -> JXArray:
+        """Predict the output for the given input data.
+
+        Args:
+            X (JXArray): Input data.
+
+        Returns:
+            JXArray: Predicted output.
+        """
+        return self._predict_kernel(X, self._buffer)
+    
+    def __call__(self, X: JXArray) -> JXArray:
+        """Syntactic sugar for predict."""
+        return self.predict(X)
+    
+    def _pre_fit(self, X: JXArray, y: JXArray) -> set[str]:
+        """Initialize the fit by pre-fitting some parameters based on the data.
+        This method is called once before the fitting process starts.
+        It should return a set of parameter names that have been initialized,
+        and these will not be optimized in the successive fitting procedure.
+
+        Args:
+            X (JXArray): Input features.
+            y (JXArray): Target values.
+
+        Returns:
+            set[str]: A set of parameter names that have been initialized.
+        """
+        return set()
 
     def fit(
         self,
@@ -292,10 +323,35 @@ class MiniMLModel(ABC):
         """
         if not self.bound:
             self.bind()
+            
+        all_params = set(self.param_names)
+        prefit_params = set(self._pre_fit(X, y))
+        fit_params = all_params - prefit_params
 
+        if len(fit_params) == 0:
+            return MiniMLFitResult(
+                success=True,
+                message="No parameters left to fit after pre-fitting",
+                loss=float(self.total_loss(y, self.predict(X), reg_lambda)),
+                niter=0,
+                nfev=0,
+            )
+            
+        # Create a mask for the parameters to fit
+        i0 = 0
+        mask_params: list[JXArray] = []
+        for p in self._params:
+            if p.path in fit_params:
+                mask_params.append(jnp.arange(i0, i0 + p.param.size))
+            i0 += p.param.size
+        p_mask = jnp.concatenate(mask_params)
+
+        buffer = self._buffer
         def _targ_fun(p: JXArray) -> JXArray:
-            self._buffer = p
-            loss = self.total_loss(y, self._predict_kernel(X), reg_lambda)
+            nonlocal buffer
+            buf_in = buffer.at[p_mask].set(p)
+            y_pred = self._predict_kernel(X, buf_in)
+            loss = self.total_loss(y, y_pred, reg_lambda, buf_in)
             return loss
 
         # Does the method require a jacobian?
@@ -312,24 +368,25 @@ class MiniMLModel(ABC):
         requires_hess = method in {"dogleg", "trust-exact"}
 
         if requires_jac:
-            _targ_fun_opt = jax.jit(jax.value_and_grad(_targ_fun))
+            _targ_fun_opt = jax.jit(jax.value_and_grad(_targ_fun), inline=True)
         else:
-            _targ_fun_opt = jax.jit(_targ_fun)
+            _targ_fun_opt = jax.jit(_targ_fun, inline=True)
 
         if requires_hessp:
-            _targ_jac = jax.jit(jax.grad(_targ_fun))
+            _targ_jac = jax.jit(jax.grad(_targ_fun), inline=True)
 
             def jac_dir(x, p):
                 return _targ_jac(x) @ p
 
-            _targ_hessp = jax.jit(jax.grad(jac_dir, argnums=0))
+            _targ_hessp = jax.jit(jax.grad(jac_dir, argnums=0), inline=True)
             fit_args["hessp"] = _targ_hessp
         if requires_hess:
-            _targ_hess = jax.jit(jax.hessian(_targ_fun))
+            _targ_hess = jax.jit(jax.hessian(_targ_fun), inline=True)
             fit_args["hess"] = _targ_hess
+        p0 = self._buffer[p_mask]
 
-        sol = minimize(_targ_fun_opt, self._buffer, jac=requires_jac, **fit_args)
-        self._buffer = jnp.array(sol.x, dtype=jnp.dtype(self._dtype))
+        sol = minimize(_targ_fun_opt, p0, jac=requires_jac, **fit_args)
+        self._buffer = self._buffer.at[p_mask].set(sol.x)
 
         return MiniMLFitResult(
             success=sol.success,
@@ -411,7 +468,7 @@ class MiniMLModel(ABC):
         Returns:
             dict[str, JXArray]: A dictionary mapping parameter names to their values.
         """
-        return {p.path: p.param.value.copy() for p in self._params}
+        return {p.path: p.param().copy() for p in self._params}
 
     def set_params(self, params: dict[str, JXArray]) -> None:
         """Set the model parameters from a dictionary of parameter names and their values.

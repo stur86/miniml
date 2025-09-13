@@ -6,8 +6,8 @@ from miniml.param import MiniMLError, MiniMLParam, MiniMLParamList
 class MockContainer:
     _buffer: jnp.ndarray
     
-    def __init__(self) -> None:
-        self._buffer = jnp.zeros((10,), dtype=jnp.float32)
+    def __init__(self, n: int = 10) -> None:
+        self._buffer = jnp.zeros((n,), dtype=jnp.float32)
 
 def test_param():
     p = MiniMLParam((3, 2), np.float32)
@@ -21,12 +21,16 @@ def test_param():
     assert not p.bound
     p.bind(0, bufc)
     assert p.bound
-    assert np.array_equal(p.value, bufc._buffer[0:6].reshape((3, 2)))
+    assert np.array_equal(p(), bufc._buffer[0:6].reshape((3, 2)))
     p.unbind()
 
     p.bind(2, bufc)
     assert p.bound
-    assert np.array_equal(p.value, bufc._buffer[2:8].reshape((3, 2)))
+    assert np.array_equal(p(), bufc._buffer[2:8].reshape((3, 2)))
+    
+    # Try by passing an explicit buffer
+    test_buf = jnp.arange(10, -1, -1, dtype=jnp.float32)
+    assert np.array_equal(p(test_buf), test_buf[2:8].reshape((3, 2)))
 
 def test_param_errors():
     
@@ -52,7 +56,7 @@ def test_param_errors():
     p.unbind()
     
     with pytest.raises(MiniMLError, match="Parameter not bound to buffer"):
-        _ = p.value
+        p()
         
 def test_param_regularization():
     p = MiniMLParam((3, 2), reg_loss=lambda x: jnp.sum(x**2))
@@ -61,10 +65,14 @@ def test_param_regularization():
     p.bind(0, bufc)
     bufc._buffer = jnp.arange(10, dtype=jnp.float32)
     assert np.isclose(p.regularization_loss(), jnp.sum(bufc._buffer[0:6]**2))
+    
+    # Try with explicit buffer
+    test_buf = jnp.zeros((10,), dtype=jnp.float32)
+    assert np.isclose(p.regularization_loss(test_buf), 0.0)
         
 def test_param_list():
-    p1 = MiniMLParam((5,2))
-    p2 = MiniMLParam((10,))
+    p1 = MiniMLParam((5,2), reg_loss=lambda x: jnp.sum(x**2))
+    p2 = MiniMLParam((10,), reg_loss=lambda x: jnp.sum(jnp.abs(x)))
     
     plist = MiniMLParamList([p1, p2])
     
@@ -82,3 +90,10 @@ def test_param_list():
     assert prefs[0].path == "0.v"
     assert prefs[1].param is p2
     assert prefs[1].path == "1.v"
+    
+    # Try binding
+    bufc = MockContainer(p1.size + p2.size)
+    p1.bind(0, bufc)
+    p2.bind(p1.size, bufc)
+    bufc._buffer = jnp.ones((p1.size + p2.size,), dtype=jnp.float32)
+    
