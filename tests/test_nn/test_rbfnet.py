@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 import jax.numpy as jnp
 from miniml.param import MiniMLParamList
@@ -48,3 +49,30 @@ def test_rbf_layer_basic(proj_type: ProjectionType) -> None:
 
     X = jnp.arange(10).reshape((-1, n_in))
     assert layer.predict(X).shape == (X.shape[0], n_out)
+
+@pytest.mark.parametrize("seed", range(10)) 
+def test_rbf_layer_fit(seed: int) -> None:
+    n_in, n_centers, n_out = 2, 1, 1
+    # Generate gaussian-distributed data
+    rng = np.random.default_rng(seed)
+    X0 = rng.normal(size=(n_in))
+    S = rng.normal(size=(n_in, n_in))
+    S = S.T@S
+    
+    X = jnp.array(rng.normal(size=(100, n_in)))
+    y = jnp.exp(-0.5 * jnp.einsum('ij,jk,ik->i', X-X0, S, X-X0))[:,None]
+    
+    rbf = RBFLayer(n_in=n_in, n_out=n_out, n_centers=n_centers, projection="full")
+    rbf.randomize(seed=seed)
+    res = rbf.fit(X, y)
+    y_pred = rbf.predict(X)
+    fitted_params = rbf.get_params()
+
+    assert res.success
+    assert jnp.allclose(y, y_pred, atol=1e-2)
+    
+    assert jnp.allclose(fitted_params["_X0.v"], X0, atol=1e-2)
+    assert jnp.allclose(fitted_params["_pmats.v"][0].T@fitted_params["_pmats.v"][0], S, atol=1e-2)
+    assert jnp.allclose(fitted_params["_W.v"], jnp.ones((n_centers, n_out)), atol=1e-2)
+    
+    
