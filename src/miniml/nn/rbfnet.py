@@ -1,6 +1,7 @@
 from typing import Literal, Callable
 from numpy.typing import DTypeLike
 
+import jax
 from jax import Array as JXArray
 import jax.numpy as jnp
 from miniml.loss import LossFunction, squared_error_loss
@@ -20,6 +21,7 @@ class RBFLayer(MiniMLModel):
     _pmats_list: MiniMLParamList
     _pmats: MiniMLParam
     _xproj: Callable[[JXArray, JXArray], JXArray]
+    _normalize: bool
 
     def __init__(
         self,
@@ -29,6 +31,7 @@ class RBFLayer(MiniMLModel):
         rbf: RBFunction = gaussian_rbf,
         projection: ProjectionType = "scaling",
         loss: LossFunction = squared_error_loss,
+        normalize: bool = False,
         dtype: DTypeLike = jnp.float32,
     ) -> None:
 
@@ -58,6 +61,7 @@ class RBFLayer(MiniMLModel):
 
         # Output weights
         self._W = MiniMLParam((n_centers, n_out), dtype=dtype)
+        self._normalize = normalize
 
         super().__init__(loss=loss)
 
@@ -96,4 +100,14 @@ class RBFLayer(MiniMLModel):
         H = self._rbf(r)  # (n, centers)
         # Apply output weights
         W = self._W(buffer)  # (centers, n_out)
-        return H @ W  # (n, n_out)
+        X = H @ W  # (n, n_out)
+
+        # Normalize if required
+        jax.lax.cond(
+            self._normalize,
+            lambda X: X / jnp.sum(H, axis=-1, keepdims=True),
+            lambda X: X,
+            X,
+        )
+
+        return X

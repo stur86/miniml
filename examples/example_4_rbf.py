@@ -13,7 +13,7 @@ def _():
     from miniml.nn.rbf import gaussian_rbf, PolyharmonicRBF, inverse_quadratic_rbf
     from miniml.loss import CrossEntropyLogLoss
     import matplotlib.pyplot as plt
-    return CrossEntropyLogLoss, RBFLayer, inverse_quadratic_rbf, jnp, np, plt
+    return CrossEntropyLogLoss, RBFLayer, gaussian_rbf, jnp, np, plt
 
 
 @app.cell
@@ -55,8 +55,9 @@ def _(jnp, np):
 
 
 @app.cell
-def _(CrossEntropyLogLoss, RBFLayer, X, inverse_quadratic_rbf, yclass):
-    rbfm = RBFLayer(n_in=2, n_centers=5, n_out=1, projection="full", rbf=inverse_quadratic_rbf, loss=CrossEntropyLogLoss(zero_ref=True))
+def _(CrossEntropyLogLoss, RBFLayer, X, gaussian_rbf, yclass):
+    rbfm = RBFLayer(n_in=2, n_centers=10, n_out=1, projection="full", rbf=gaussian_rbf, loss=CrossEntropyLogLoss(zero_ref=True), 
+                   normalize=True)
     rbfm.randomize(0)
 
     res = rbfm.fit(X, yclass)
@@ -87,11 +88,6 @@ def _(X, np, plt, rbfm, y):
 @app.cell
 def _(res):
     res
-    return
-
-
-@app.cell
-def _():
     return
 
 
