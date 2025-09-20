@@ -42,7 +42,7 @@ class MiniMLModel(ABC):
     * the constructor must declare all MiniMLParam and MiniMLModels
       directly as members of the MiniMLModel object;
     * the super() constructor must be called at the end;
-    * the predict() method must be implemented.
+    * the _predict_kernel() method must be implemented.
 
     """
 
