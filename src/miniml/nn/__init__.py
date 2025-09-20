@@ -25,6 +25,8 @@ from miniml.nn.linear import Linear
 from miniml.nn.stack import Stack
 from miniml.nn.mlp import MLP
 from miniml.nn.rbfnet import RBFLayer
+from miniml.nn.identity import Identity
+from miniml.nn.parallel import Parallel
 
 __all__ = [
     "Linear",
@@ -48,4 +50,6 @@ __all__ = [
     "bump_rbf",
     "PolyharmonicRBF",
     "RBFLayer",
+    "Identity",
+    "Parallel"
 ]

@@ -102,7 +102,7 @@ class MiniMLModel(ABC):
                     f"Model parameter dtype mismatch: found {dtype} and {p.dtype}"
                 )
 
-        self._dtype = dtype
+        self._dtype = dtype or jnp.float32
         self._dtype_name = _supported_types.get_inverse(dtype)  # type: ignore
         # Calculate total size
         self._buffer_size = sum(pref.param.size for pref in self._params)
