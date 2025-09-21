@@ -2,6 +2,7 @@ from typing import Literal
 from miniml.model import MiniMLModel, MiniMLModelList
 from jax import Array
 import jax.numpy as jnp
+from miniml.loss import LossFunction, squared_error_loss
 
 
 class Parallel(MiniMLModel):
@@ -13,6 +14,7 @@ class Parallel(MiniMLModel):
         models: list[MiniMLModel],
         mode: Literal["sum", "concat"],
         concat_axis: int = -1,
+        loss: LossFunction = squared_error_loss
     ) -> None:
         """Initialize the Parallel model.
 
@@ -20,6 +22,7 @@ class Parallel(MiniMLModel):
             models (list[MiniMLModel]): The models to apply in parallel.
             mode (Literal["sum", "concat"]): The mode of combining outputs.
             concat_axis (int, optional): The axis to concatenate along if mode is "concat". Defaults to -1.
+            loss (LossFunction, optional): The loss function to use. Defaults to squared_error_loss.
 
         Raises:
             ValueError: If models list is empty or mode is invalid.
@@ -34,7 +37,7 @@ class Parallel(MiniMLModel):
         except AttributeError:
             raise ValueError(f"Invalid mode '{mode}'. Choose 'sum' or 'concat'.")
 
-        super().__init__()
+        super().__init__(loss=loss)
 
     def _predictf_sum(self, X: Array, buffer: Array) -> Array:
         outputs = [

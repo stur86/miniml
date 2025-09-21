@@ -31,7 +31,7 @@ dev = [
     "taskipy>=1.14.1",
 ]
 examples = [
-    "marimo>=0.15.0",
+    "marimo>=0.16.0",
     "matplotlib>=3.10.5",
     "seaborn>=0.13.2",
     "ucimlrepo>=0.0.7",
