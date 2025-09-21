@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.15.2"
+__generated_with = "0.16.0"
 app = marimo.App(width="medium")
 
 
@@ -15,6 +15,7 @@ def _():
     from miniml.loss import CrossEntropyLogLoss
     return (
         Activation,
+        CrossEntropyLogLoss,
         Identity,
         Linear,
         Parallel,
@@ -61,7 +62,15 @@ def _(X, jnp, np, y):
 
 
 @app.cell
-def _(Activation, Identity, Linear, Parallel, Stack, relu):
+def _(
+    Activation,
+    CrossEntropyLogLoss,
+    Identity,
+    Linear,
+    Parallel,
+    Stack,
+    relu,
+):
     # Example of a stacked model: a simple MLP with "leakage" in the intermediate layer
 
     n_hidden = 20
@@ -71,7 +80,7 @@ def _(Activation, Identity, Linear, Parallel, Stack, relu):
         Parallel([Linear(n_hidden, n_hidden), Identity()], mode="sum"),
         Activation(relu),
         Linear(n_hidden, 10)
-    ])
+    ], loss=CrossEntropyLogLoss(zero_ref=False))
     mlpc.randomize()
 
     print(f"Parameter count: {mlpc.size}")
