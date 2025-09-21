@@ -68,6 +68,14 @@ The model's total loss can be retrieved with the method `.total_loss`. This meth
 
 ```TotalLoss = BaseLoss + reg_lambda * RegularizationLoss```.
 
-The `.fit` model accepts the same parameter, and it will be used for regularization in that fitting process. If you want different regularization strengths on a parameter-by-parameter basis you should take care of it by creating appropriate individual loss functions.
+The `.fit` model accepts the same parameter, and it will be used for regularization in that fitting process.
+
+It is also possible to pass an additional scaling parameter for the regularization loss to each individual parameter:
+
+```py
+M = MiniMLParam((3,2), reg_loss=LNormRegularization(2), reg_scale=0.1)
+```
+
+means the loss on M will be multiplied by an additional factor of `0.1`. The overall `reg_lambda` will still apply as well.
 
 For more information see [the `loss` module API reference](api/miniml/loss.md).

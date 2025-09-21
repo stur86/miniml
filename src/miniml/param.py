@@ -46,6 +46,7 @@ class MiniMLParam:
         shape: tuple[int, ...],
         dtype: DTypeLike = np.float32,
         reg_loss: RegLossFunction | None = None,
+        reg_scale: float = 1.0
     ) -> None:
         """Construct a MiniML Parameter
 
@@ -53,6 +54,7 @@ class MiniMLParam:
             shape (tuple[int,...]): The shape of the parameter.
             dtype (DTypeLike, optional): The data type of the parameter. Defaults to np.float32.
             reg_loss (RegLossFunction, optional): The regularization loss function. Defaults to None.
+            reg_scale (float, optional): The scale factor for the regularization loss. Defaults to 1.0.
         """
         if dtype not in _supported_types.values():
             raise MiniMLError(f"Parameter dtype {dtype} not supported")
@@ -62,6 +64,7 @@ class MiniMLParam:
         self._dtype_name = _supported_types.get_inverse(dtype)  # type: ignore
         self._size = int(np.prod(shape))
         self._reg_loss = reg_loss
+        self._reg_scale = reg_scale
 
     @property
     def shape(self) -> tuple[int, ...]:
@@ -137,7 +140,7 @@ class MiniMLParam:
         """
         if self._reg_loss is None:
             return jnp.array(0.0, dtype=jnp.dtype(self._dtype))
-        return self._reg_loss(self(buffer))
+        return self._reg_loss(self(buffer))*self._reg_scale
 
     def unbind(self) -> None:
         """Unbind this parameter from its buffer container."""

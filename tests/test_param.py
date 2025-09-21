@@ -69,6 +69,11 @@ def test_param_regularization():
     # Try with explicit buffer
     test_buf = jnp.zeros((10,), dtype=jnp.float32)
     assert np.isclose(p.regularization_loss(test_buf), 0.0)
+    
+    # Test with a scale
+    p = MiniMLParam((3, 2), reg_loss=lambda x: jnp.sum(x**2), reg_scale=0.1)
+    p.bind(0, bufc)
+    assert np.isclose(p.regularization_loss(), jnp.sum(bufc._buffer[0:6]**2)*0.1)
         
 def test_param_list():
     p1 = MiniMLParam((5,2), reg_loss=lambda x: jnp.sum(x**2))
