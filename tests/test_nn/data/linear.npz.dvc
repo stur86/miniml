@@ -1,0 +1,5 @@
+outs:
+- md5: 8631d34271704e4251630ababe5329c0
+  size: 4283
+  hash: md5
+  path: linear.npz

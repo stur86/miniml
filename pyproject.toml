@@ -23,6 +23,7 @@ module-root = "src/"
 
 [dependency-groups]
 dev = [
+    "dvc[s3]>=3.63.0",
     "mkdocs-api-autonav>=0.3.1",
     "mkdocs-material>=9.6.18",
     "mkdocstrings-python>=1.18.2",
