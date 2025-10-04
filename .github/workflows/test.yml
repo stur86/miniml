@@ -31,6 +31,9 @@ jobs:
     - name: Install dependencies
       run: |
         uv sync
+    - name: Pull DVC data
+      run: |
+        uv run task pull-data
     - name: Test with pytest
       run: |
         uv run task test
