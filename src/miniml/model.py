@@ -487,9 +487,9 @@ class MiniMLModel(ABC):
                 raise MiniMLError(
                     f"Parameter dtype mismatch for {key}: model has {p.dtype}, provided value has {val.dtype}"
                 )
-            if p.size != val.size:
+            if p.shape != val.shape:
                 raise MiniMLError(
-                    f"Parameter size mismatch for {key}: model has {p.size}, provided value has {val.size}"
+                    f"Parameter shape mismatch for {key}: model has {p.shape}, provided value has {val.shape}"
                 )
             idx = slice(p._buf_i0, p._buf_i0 + p.size)
             self._buffer = self._buffer.at[idx].set(val.reshape(-1))

@@ -14,3 +14,9 @@ site/
 
 # VSCode settings
 .vscode/*
+
+# Tokens
+.env
+
+# Test data
+tests/test_nn/data/*.npz

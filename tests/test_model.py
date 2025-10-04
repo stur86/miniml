@@ -291,7 +291,7 @@ def test_model_set_get_params():
         m.set_params({'p3.v': jnp.array([1.0], dtype=jnp.float32)})
         
     # Try the wrong size
-    with pytest.raises(MiniMLError, match="Parameter size mismatch for"):
+    with pytest.raises(MiniMLError, match="Parameter shape mismatch for"):
         m.set_params({'p1.v': jnp.array([1.0], dtype=jnp.float32)})
         
     # Or the wrong dtype

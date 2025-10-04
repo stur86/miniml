@@ -1,0 +1,6 @@
+[core]
+    remote = miniml
+    analytics = false
+['remote "miniml"']
+    url = s3://miniml-data
+    endpointurl = https://s3.eu-central-003.backblazeb2.com
