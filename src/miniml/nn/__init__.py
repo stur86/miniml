@@ -27,11 +27,13 @@ from miniml.nn.mlp import MLP
 from miniml.nn.rbfnet import RBFLayer
 from miniml.nn.identity import Identity
 from miniml.nn.parallel import Parallel
+from miniml.nn.embedding import Embedding
 
 __all__ = [
     "Linear",
     "Stack",
     "MLP",
+    "Embedding",
     "Activation",
     "ActivationFunction",
     "relu",
