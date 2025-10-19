@@ -38,7 +38,7 @@ def test_linear_w_data(data_path: Path):
     model.bind()
     model.set_params({f"{k}.v": v for k, v in data["m_weights"].item().items()})
     
-    input = jnp.array(data["t_input"])
+    input = jnp.array(data["t_input_0"])
     targ_output = jnp.array(data["t_output"])
     output = model.predict(input)
     
