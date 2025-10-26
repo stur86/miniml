@@ -1,3 +1,4 @@
+from aiohttp_retry import Any
 from jax import numpy as jnp, Array as JxArray
 from miniml.model import MiniMLModel
 from miniml.nn.linear import Linear
@@ -69,6 +70,9 @@ class MultiHeadAttention(MiniMLModel):
             K = self._K(buffer)
             V = self._V(buffer)
         return Q, K, V
+    
+    def predict(self, X: _MultiHeadArg, **predict_kwargs: dict[str, Any]) -> JxArray:
+        return super().predict(X, **predict_kwargs) # type: ignore
 
     def _predict_kernel(self, X: _MultiHeadArg, buffer: JxArray, attn_mask: JxArray | None = None) -> JxArray:
         is_self_attn = not isinstance(X, tuple)
@@ -106,4 +110,4 @@ class MultiHeadAttention(MiniMLModel):
         attn_output_heads = jnp.einsum("...qhk,...khd->...qhd", attn_weights, Xv_heads)
         attn_output = attn_output_heads.reshape(attn_output_heads.shape[:-2] + (self._embed_dim,))
         
-        return attn_output
+        return self._out_proj._predict_kernel(attn_output, buffer)
