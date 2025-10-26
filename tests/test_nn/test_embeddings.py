@@ -1,4 +1,3 @@
-import pytest
 from miniml.nn.embedding import Embedding
 import jax.numpy as jnp
 
@@ -22,15 +21,21 @@ def test_embedding_no_unknown():
     assert jnp.array_equal(output[1, 0], embd_matrix[2])
     assert jnp.array_equal(output[1, 1], embd_matrix[3])
     
-    # Unknown should raise error
-    X_invalid = jnp.array([[0, 5], [2, 3]])
-    with pytest.raises(ValueError):
-        emb(X_invalid)
-        
-    # Negative indices should raise error
+    # Unknown should return NaNs
+    X_invalid = jnp.array([[0, 6], [1,2]])
+    output = emb(X_invalid)
+    assert jnp.array_equal(output[0,0], embd_matrix[0])
+    assert jnp.all(jnp.isnan(output[0,1]))
+    assert jnp.array_equal(output[1,0], embd_matrix[1])
+    assert jnp.array_equal(output[1,1], embd_matrix[2])
+
+    # Negative indices should return NaNs
     X_invalid_neg = jnp.array([[0, -1], [2, 3]])
-    with pytest.raises(ValueError):
-        emb(X_invalid_neg)
+    output_neg = emb(X_invalid_neg)
+    assert jnp.array_equal(output_neg[0,0], embd_matrix[0])
+    assert jnp.all(jnp.isnan(output_neg[0,1]))
+    assert jnp.array_equal(output_neg[1,0], embd_matrix[2])
+    assert jnp.array_equal(output_neg[1,1], embd_matrix[3])
         
 def test_embedding_with_unknown():
     n_vocab = 5
@@ -52,7 +57,11 @@ def test_embedding_with_unknown():
     assert jnp.array_equal(output[1, 0], embd_matrix[5])  # Unknown index
     assert jnp.array_equal(output[1, 1], embd_matrix[5])  # Unknown index
     
-    # Negative indices should raise error
+    # Negative indices should return NaNs
     X_invalid = jnp.array([[0, -1], [2, 3]])
-    with pytest.raises(ValueError):
-        emb(X_invalid)
+    output_neg = emb(X_invalid)
+    
+    assert jnp.array_equal(output_neg[0,0], embd_matrix[0])
+    assert jnp.all(jnp.isnan(output_neg[0,1]))
+    assert jnp.array_equal(output_neg[1,0], embd_matrix[2])
+    assert jnp.array_equal(output_neg[1,1], embd_matrix[3])

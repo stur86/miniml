@@ -28,13 +28,11 @@ class Embedding(MiniMLModel):
 
     def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
         embd = self._embeddings(buffer)
-        if jnp.any(X < 0):
-            raise ValueError("Input indices must be non-negative")
-        if self._use_unknown:
-            X = jnp.clip(X, 0, self._n_vocab)
-        else:
-            if jnp.any(X >= self._n_vocab):
-                raise ValueError(f"Input indices must be less than {self._n_vocab}")
+        # Clipping upwards guarantees we use the unknown embedding for out-of-vocab indices
+        # if we are using that feature
+        X = jnp.clip(X, None, self._n_vocab)
+        # Replace all negative indices with n_vocab+1 to make the output NaN
+        X = jnp.where(X < 0, self._n_vocab + 1, X)
         return jnp.take(embd, X, axis=0)
 
     @property

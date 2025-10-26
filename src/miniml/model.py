@@ -279,7 +279,9 @@ class MiniMLModel(ABC):
         Returns:
             JXArray: Predicted output.
         """
-        return self._predict_kernel(X, buffer=self._buffer, **predict_kwargs)
+        if not hasattr(self, "_jit_predict_kernel"):
+            self._jit_predict_kernel = jax.jit(self._predict_kernel, inline=True)
+        return self._jit_predict_kernel(X, buffer=self._buffer, **predict_kwargs)
     
     def __call__(self, X: JXArray) -> JXArray:
         """Syntactic sugar for predict."""
