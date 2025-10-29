@@ -1,4 +1,5 @@
 from jax import Array as JxArray
+import jax.numpy as jnp
 import numpy as np
 import pytest
 from pathlib import Path
@@ -45,6 +46,25 @@ def mha_data(name: str) -> MHAData:
         t_input_2=data["t_input_2"],
         t_output=data["t_output"],
     )
+
+def test_mha_basic():
+    embed_dim = 6
+    mha_1h = MultiHeadAttention(embed_dim=embed_dim, num_heads=1)
+    mha_1h.bind()
+    
+    # Set all weights to identity-like
+    W_qkv = np.tile(np.eye(embed_dim, dtype=np.float32), (1,3))
+    mha_1h.set_params({
+        "_QKV.v": jnp.array(W_qkv),
+        "_QKV_bias.v": jnp.zeros((3*embed_dim,), dtype=jnp.float32),
+        "_out_proj._W.v": jnp.eye(embed_dim, dtype=jnp.float32),
+        "_out_proj._b.v": jnp.zeros((embed_dim,), dtype=jnp.float32),
+    })
+    
+    X1 = jnp.zeros((4,embed_dim), dtype=jnp.float32)
+    Y1 = mha_1h.predict(X1)
+    
+    assert Y1.shape == X1.shape
 
 @pytest.mark.parametrize(
     "name",
