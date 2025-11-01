@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from pathlib import Path
 from dataclasses import dataclass
-from miniml.nn.mha import MultiHeadAttention
+from miniml.nn.mha import MultiHeadAttention, _MultiHeadArg
 
 DATA_PATH = Path(__file__).parent / "data"
 
@@ -36,13 +36,19 @@ class MHAData:
     
     @property
     def init_args(self) -> dict:
-        args = dict(self.params)
-        # Remove any keys not in MultiHeadAttention init
-        args.pop("L_KV_seq", None)
-        args.pop("N_batch", None)
-        args.pop("L_Q_seq", None)
-        args.pop("attn_mask", None)
-        return args
+        return {
+            "embed_dim": self.params["embed_dim"],
+            "num_heads": self.params.get("num_heads", 1),
+            "kdim": self.params.get("kdim", None),
+            "vdim": self.params.get("vdim", None),
+        }
+    
+    @property
+    def X(self) -> _MultiHeadArg:
+        if self.params.get("is_self_attention", False):
+            return self.t_input_0
+        else:
+            return (self.t_input_0, self.t_input_1, self.t_input_2)
 
     @property
     def call_args(self) -> dict:
@@ -90,13 +96,13 @@ def test_mha_basic():
         "mha_1",
         "mha_2",
         "mha_3",
-        "mha_4"
+        "mha_4",
+        "mha_5"
     ]
 )
 def test_mha_w_data(mha_data: MHAData):
     mha = MultiHeadAttention(**mha_data.init_args)
     mha.bind()
     mha_data.apply_weights(mha)
-    output = mha.predict((mha_data.t_input_0, mha_data.t_input_1, mha_data.t_input_2), **mha_data.call_args)
-    
+    output = mha.predict(mha_data.X, **mha_data.call_args)
     assert np.allclose(output, mha_data.t_output)
