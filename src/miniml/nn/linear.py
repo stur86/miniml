@@ -11,6 +11,7 @@ from miniml.loss import (
 
 
 class Linear(MiniMLModel):
+    """A MiniML model that applies a linear transformation to the input data."""
 
     def __init__(
         self,

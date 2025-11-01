@@ -8,6 +8,7 @@ from miniml.loss import LossFunction, RegLossFunction, squared_error_loss, LNorm
 _MultiHeadArg = JxArray | tuple[JxArray, JxArray, JxArray]
 
 class MultiHeadAttention(MiniMLModel):
+    """A MiniML model that implements multi-head attention mechanism."""
     
     _embed_dim: int
     _num_heads: int
@@ -20,6 +21,44 @@ class MultiHeadAttention(MiniMLModel):
                  loss: LossFunction = squared_error_loss,
                  reg_loss: RegLossFunction = LNormRegularization(2),
                  dtype: DTypeLike = jnp.float32) -> None:
+        r"""Initialize the MultiHeadAttention model.
+        
+        The multi-head attention is computed as:
+        $$
+        \text{MultiHead}(Q, K, V) = \text{Concat}(\text{head}_1, \ldots, \text{head}_h) W^T
+        $$
+        where each head is computed as:
+        $$
+        \text{head}_i = \text{Attention}(Q W_i^Q, K W_i^K, V W_i^V)
+        $$
+        and the attention function is defined as:
+        $$
+        \text{Attention}(Q, K, V) = \text{softmax}\left(\frac{Q K^T}{\sqrt{d_k}}\right) V
+        $$
+        
+        For self-attention, Q, K, and V are all the same input, and this model can be invoked as:
+        
+        ```py
+        mha = MultiHeadAttention(embed_dim=64, num_heads=8)
+        output = mha.predict(X)  # where X has shape (..., embed_dim)
+        ```
+        
+        Whereas for general attention, Q, K, and V can be different inputs, and the model can be invoked as:
+        
+        ```py
+        mha = MultiHeadAttention(embed_dim=64, num_heads=8, kdim=32, vdim=32)
+        output = mha.predict((Xq, Xk, Xv))  # where Xq has shape (..., embed_dim), Xk and Xv have shape (..., kdim) and (..., vdim) respectively
+        ```
+        
+        Args:
+            embed_dim (int): Total dimension of the model.
+            num_heads (int, optional): Number of attention heads. Defaults to 1.
+            kdim (int | None, optional): Dimension of the key vectors. Defaults to None, which sets it equal to embed_dim.
+            vdim (int | None, optional): Dimension of the value vectors. Defaults to None, which sets it equal to embed_dim.
+            loss (LossFunction, optional): Loss function for the model. Defaults to squared_error_loss.
+            reg_loss (RegLossFunction, optional): Regularization function for the weights. Defaults to LNormRegularization(2).
+            dtype (DTypeLike, optional): Data type for the model parameters. Defaults to jnp.float32.
+        """
         
         self._kdim = kdim if kdim is not None else embed_dim
         self._vdim = vdim if vdim is not None else embed_dim
