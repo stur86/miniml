@@ -1,5 +1,5 @@
 outs:
-- md5: 2629b3092662afd21d6e8b23f2b1ade3
-  size: 5079
+- md5: 7597fbb306ccf3a2c7d6c99ad66b7a6f
+  size: 3219
   hash: md5
   path: mha_3.npz

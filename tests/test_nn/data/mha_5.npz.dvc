@@ -1,0 +1,5 @@
+outs:
+- md5: 8a9890d904b58c39741d34dc3dfe158c
+  size: 2984
+  hash: md5
+  path: mha_5.npz
