@@ -1,4 +1,4 @@
-from aiohttp_retry import Any
+from typing import Any
 from jax import numpy as jnp, Array as JxArray
 from miniml.model import MiniMLModel
 from miniml.nn.linear import Linear
@@ -103,8 +103,8 @@ class MultiHeadAttention(MiniMLModel):
         attn_scores = attn_scores / jnp.sqrt(self._head_dim)
         if attn_mask is not None:
             if attn_mask.dtype == jnp.bool_:
-                attn_mask = jnp.where(attn_mask, 0.0, -jnp.inf)
-            attn_scores = attn_scores + attn_mask
+                attn_mask = jnp.where(attn_mask, -jnp.inf, 0.0)
+            attn_scores = attn_scores + attn_mask[:,None,:]
         attn_weights = jnp.exp(attn_scores - jnp.max(attn_scores, axis=-1, keepdims=True))
         attn_weights = attn_weights / jnp.sum(attn_weights, axis=-1, keepdims=True)
         attn_output_heads = jnp.einsum("...qhk,...khd->...qhd", attn_weights, Xv_heads)

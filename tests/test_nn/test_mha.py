@@ -30,14 +30,32 @@ class MHAData:
             params["_K.v"] = self.m_weights["_K"].T
             params["_V.v"] = self.m_weights["_V"].T
         params["_QKV_bias.v"] = self.m_weights["_QKV_bias"]
-        params["_out_proj._W.v"] = self.m_weights["_out_proj._W"]
+        params["_out_proj._W.v"] = self.m_weights["_out_proj._W"].T
         params["_out_proj._b.v"] = self.m_weights["_out_proj._b"]
         mha.set_params(params)
+    
+    @property
+    def init_args(self) -> dict:
+        args = dict(self.params)
+        # Remove any keys not in MultiHeadAttention init
+        args.pop("L_KV_seq", None)
+        args.pop("N_batch", None)
+        args.pop("L_Q_seq", None)
+        args.pop("attn_mask", None)
+        return args
+
+    @property
+    def call_args(self) -> dict:
+        return {
+            "attn_mask": self.params.get("attn_mask", None)
+        }
 
 @pytest.fixture
 def mha_data(name: str) -> MHAData:
     data_file = DATA_PATH / f"{name}.npz"
     data = np.load(data_file, allow_pickle=True)
+    
+    
     return MHAData(
         params=data["params"].item(),
         m_weights=data["m_weights"].item(),
@@ -69,13 +87,16 @@ def test_mha_basic():
 @pytest.mark.parametrize(
     "name",
     [
-        "mha_1"
+        "mha_1",
+        "mha_2",
+        "mha_3",
+        "mha_4"
     ]
 )
 def test_mha_w_data(mha_data: MHAData):
-    mha = MultiHeadAttention(**mha_data.params)
+    mha = MultiHeadAttention(**mha_data.init_args)
     mha.bind()
     mha_data.apply_weights(mha)
-    output = mha.predict((mha_data.t_input_0, mha_data.t_input_1, mha_data.t_input_2))
+    output = mha.predict((mha_data.t_input_0, mha_data.t_input_1, mha_data.t_input_2), **mha_data.call_args)
     
     assert np.allclose(output, mha_data.t_output)

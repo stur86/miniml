@@ -1,5 +1,5 @@
 outs:
-- md5: cb1a876751087191832b26f65e232114
-  size: 3219
+- md5: fa1bf4d1333d17cc59b9c78ce768e694
+  size: 2984
   hash: md5
   path: mha_4.npz
