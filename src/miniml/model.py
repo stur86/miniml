@@ -186,7 +186,7 @@ class MiniMLModel(ABC):
         """
         if not self.bound:
             self.bind()
-        key = jax.random.key(seed or time.time_ns() % (2**31 - 1))
+        key = jax.random.key(seed if seed is not None else (time.time_ns() % (2**31 - 1)))
         shape = self._buffer.shape
         dtype = self._buffer.dtype
         if dtype.kind == "f":
@@ -268,17 +268,20 @@ class MiniMLModel(ABC):
     def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
         pass
 
-    # @jax.jit
-    def predict(self, X: JXArray) -> JXArray:
+    def predict(self, X: JXArray, **predict_kwargs: dict[str, Any]) -> JXArray:
         """Predict the output for the given input data.
 
         Args:
             X (JXArray): Input data.
+            **predict_kwargs: Additional named arguments for prediction.
+                Defaults to {}.
 
         Returns:
             JXArray: Predicted output.
         """
-        return self._predict_kernel(X, self._buffer)
+        if not hasattr(self, "_jit_predict_kernel"):
+            self._jit_predict_kernel = jax.jit(self._predict_kernel, inline=True)
+        return self._jit_predict_kernel(X, buffer=self._buffer, **predict_kwargs)
     
     def __call__(self, X: JXArray) -> JXArray:
         """Syntactic sugar for predict."""
@@ -305,6 +308,7 @@ class MiniMLModel(ABC):
         y: JXArray,
         reg_lambda: float = 1.0,
         fit_args: dict[str, Any] = {"method": "L-BFGS-B"},
+        predict_kwargs: dict[str, Any] = {}
     ) -> MiniMLFitResult:
         """Fit the model parameters to the data by minimizing the total loss.
         See [the SciPy docs](https://docs.scipy.org/doc/scipy-1.16.1/reference/generated/scipy.optimize.minimize.html)
@@ -317,6 +321,8 @@ class MiniMLModel(ABC):
             fit_args (dict[str, Any], optional): Arguments for the optimizer.
                 Refer to the documentation for scipy.minimize for details.
                 Defaults to {"method": "L-BFGS-B"}.
+            predict_kwargs (dict[str, Any], optional): Additional arguments to pass to the predict method.
+                Defaults to {}.
 
         Returns:
             MiniMLFitResult: An object containing information about the fitting process.
@@ -350,7 +356,7 @@ class MiniMLModel(ABC):
         def _targ_fun(p: JXArray) -> JXArray:
             nonlocal buffer
             buf_in = buffer.at[p_mask].set(p)
-            y_pred = self._predict_kernel(X, buf_in)
+            y_pred = self._predict_kernel(X, buffer=buf_in, **predict_kwargs)
             loss = self.total_loss(y, y_pred, reg_lambda, buf_in)
             return loss
 

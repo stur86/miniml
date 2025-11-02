@@ -1,6 +1,6 @@
 from jax import Array as JXArray
 from miniml.model import MiniMLModel
-from miniml.loss import RegLossFunction, LNormRegularization
+from miniml.loss import RegLossFunction, LNormRegularization, LossFunction, squared_error_loss
 from miniml.param import MiniMLError, DTypeLike
 import jax.numpy as jnp
 from miniml.nn.activations import relu, ActivationFunction, Activation
@@ -14,6 +14,7 @@ class MLP(MiniMLModel):
         self,
         layer_sizes: list[int],
         activation: ActivationFunction = relu,
+        loss: LossFunction = squared_error_loss,
         reg_loss: RegLossFunction = LNormRegularization(2),
         dtype: DTypeLike = jnp.float32,
     ) -> None:
@@ -25,8 +26,10 @@ class MLP(MiniMLModel):
                 except after the last layer.
             activation (ActivationFunction, optional): Activation function to use between layers. Defaults to relu.
                 Can be any callable that takes a JAX array and returns a JAX array of the same shape.
+            loss (LossFunction, optional): Loss function for the model. Defaults to squared_error_loss.
             reg_loss (RegLossFunction, optional): Regularization function for the layers.
                 Defaults to LNormRegularization(2).
+            dtype (DTypeLike, optional): Data type for the model parameters. Defaults to jnp.float32.
         """
 
         if len(layer_sizes) < 2:
@@ -52,7 +55,7 @@ class MLP(MiniMLModel):
 
         self._layer_stack = Stack(layers)
 
-        super().__init__()
+        super().__init__(loss=loss)
 
     def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
         return self._layer_stack._predict_kernel(X, buffer)
