@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from jax.nn import log_softmax
+from jax.nn import log_softmax, softplus
 from jax import Array as JXArray
 import jax.numpy as jnp
 
@@ -79,6 +79,28 @@ class CrossEntropyLogLoss(LossFunctionBase):
 
         log_y_pred = log_softmax(log_y_pred, axis=-1)
         return -jnp.sum(y_true * log_y_pred)
+
+def binary_match_loss(y_true: JXArray, log_y_pred: JXArray) -> JXArray:
+    r"""Loss function for binary classification tasks on multiple independent outputs.
+    Computes the sum of binary cross-entropy losses for each output:
+    
+    $$
+    \mathcal{L}(y, \hat{y}) = \sum_i \left[ \log(1 + \exp(\hat{y}_i)) - y_i \hat{y}_i \right]
+    $$
+    
+    Args:
+        y_true (JXArray): True binary labels (0 or 1).
+        log_y_pred (JXArray): Logit predictions for the positive class (y_true=1).
+        
+    Returns:
+        JXArray: Computed binary cross-entropy loss.
+    """
+    
+    if y_true.shape != log_y_pred.shape:
+        raise ValueError("Shapes of true and predicted values must match.")
+    # Here log_y_pred represents the logit predictions of y_true being 1 in each position
+    log_y_norms = softplus(log_y_pred)  # log(1 + exp(y_pred))
+    return jnp.mean(log_y_norms) - jnp.mean(y_true * log_y_pred)
 
 class LNormRegularization(RegLossFunctionBase):
     r"""L^p norm regularization. Optionally includes taking the p-th root.
