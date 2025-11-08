@@ -28,12 +28,14 @@ from miniml.nn.rbfnet import RBFLayer
 from miniml.nn.identity import Identity
 from miniml.nn.parallel import Parallel
 from miniml.nn.embedding import Embedding
+from miniml.nn.layer_norm import LayerNorm
 
 __all__ = [
     "Linear",
     "Stack",
     "MLP",
     "Embedding",
+    "LayerNorm",
     "Activation",
     "ActivationFunction",
     "relu",
