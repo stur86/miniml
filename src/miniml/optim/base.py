@@ -28,6 +28,28 @@ class DerivRequire(Enum):
     HESSIAN = 3
 
 
+@dataclass
+class MiniMLOptimResult:
+    """Result of the optimization process.
+
+    Attributes:
+        x_opt: The optimized parameters.
+        success: Whether the optimization was successful.
+        message: A message describing the outcome of the optimization.
+        n_iterations: Number of iterations performed, if available.
+        n_function_evaluations: Number of function evaluations, if available.
+        n_jacobian_evaluations: Number of jacobian evaluations, if available.
+        n_hessian_evaluations: Number of hessian evaluations, if available.
+    """
+
+    x_opt: JxArray
+    success: bool
+    message: str = ""
+    n_iterations: int | None = None
+    n_function_evaluations: int | None = None
+    n_jacobian_evaluations: int | None = None
+    n_hessian_evaluations: int | None = None
+
 class MiniMLOptimizer(ABC):
     """Base class for MiniML optimizers."""
 
@@ -90,10 +112,10 @@ class MiniMLOptimizer(ABC):
             self._hess = jax.jit(self._hess, inline=True)
 
     @abstractmethod
-    def _minimize_kernel(self, x0: JxArray) -> JxArray:
+    def _minimize_kernel(self, x0: JxArray) -> MiniMLOptimResult:
         pass
 
-    def __call__(self, x0: JxArray) -> JxArray:
+    def __call__(self, x0: JxArray) -> MiniMLOptimResult:
         """Run the optimizer given the starting value
 
         Args:

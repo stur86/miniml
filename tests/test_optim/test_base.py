@@ -2,7 +2,7 @@ import pytest
 from itertools import product
 from jax import Array
 from jax import numpy as jnp
-from miniml.optim.base import MiniMLOptimizer, DerivRequire
+from miniml.optim.base import MiniMLOptimizer, DerivRequire, MiniMLOptimResult
 
 
 @pytest.mark.parametrize(
@@ -16,7 +16,7 @@ def test_miniml_optimizer_init(config: MiniMLOptimizer.Config) -> None:
 
     class TestOptimizer(MiniMLOptimizer):
 
-        def _minimize_kernel(self, x0: Array) -> Array:
+        def _minimize_kernel(self, x0: Array) -> MiniMLOptimResult:
             assert self._obj is not None
             if self._config.deriv_require == DerivRequire.NONE:
                 assert self._jac is None
@@ -50,7 +50,7 @@ def test_miniml_optimizer_init(config: MiniMLOptimizer.Config) -> None:
                 assert self._hessp is None
                 assert self._hess is not None
 
-            return x0
+            return MiniMLOptimResult(x_opt=x0, success=True, message="Test successful")
 
     # Create a dummy function
     def dummy_objective(x: Array) -> Array:
@@ -58,4 +58,8 @@ def test_miniml_optimizer_init(config: MiniMLOptimizer.Config) -> None:
 
     optimizer = TestOptimizer(dummy_objective, config)
     x0 = jnp.zeros(5)
-    optimizer(x0)
+    result = optimizer(x0)
+    assert isinstance(result, MiniMLOptimResult)
+    assert jnp.all(result.x_opt == x0)
+    assert result.success
+    assert result.message == "Test successful"
