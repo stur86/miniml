@@ -92,6 +92,7 @@ class ScipyOptimizer(MiniMLOptimizer):
             x_opt=jnp.array(result.x),
             success=result.success,
             message=result.message,
+            objective_value=float(result.fun),
             n_iterations=result.get("nit", None),
             n_function_evaluations=result.get("nfev", None),
             n_jacobian_evaluations=result.get("njev", None),

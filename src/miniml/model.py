@@ -1,7 +1,6 @@
 import numpy as np
 from abc import ABC, abstractmethod
 from pathlib import Path
-from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable, Type, TypeVar
 import time
 import jax
@@ -10,7 +9,7 @@ import jax.numpy as jnp
 from numpy.typing import DTypeLike, NDArray
 from miniml.param import MiniMLError, _supported_types, MiniMLParamRef
 from miniml.loss import LossFunction
-from miniml.optim.base import MiniMLOptimizer
+from miniml.optim.base import MiniMLOptimizer, MiniMLOptimResult
 from miniml.optim.scipy import ScipyOptimizer
 
 # Import Self from typing or typing_extensions based on Python version
@@ -27,17 +26,6 @@ else:
 class ParametrizedObject(Protocol):
 
     def _get_inner_params(self) -> list[MiniMLParamRef]: ...
-
-
-@dataclass
-class MiniMLFitResult:
-    success: bool
-    message: str
-    loss: float
-    niter: int
-    nfev: int
-    njev: int | None = None
-    nhev: int | None = None
 
 
 T = TypeVar("T", bound="MiniMLModel")
@@ -325,7 +313,7 @@ class MiniMLModel(ABC):
         reg_lambda: float = 1.0,
         optimizer: MiniMLOptimizer | None = None,
         predict_kwargs: dict[str, Any] = {},
-    ) -> MiniMLFitResult:
+    ) -> MiniMLOptimResult:
         """Fit the model parameters to the data by minimizing the total loss.
 
         Args:
@@ -338,7 +326,7 @@ class MiniMLModel(ABC):
                 Defaults to {}.
 
         Returns:
-            MiniMLFitResult: An object containing information about the fitting process.
+            MiniMLOptimResult: An object containing information about the fitting process.
         """
         if not self.bound:
             self.bind()
@@ -352,12 +340,13 @@ class MiniMLModel(ABC):
         fit_params = all_params - prefit_params
 
         if len(fit_params) == 0:
-            return MiniMLFitResult(
+            return MiniMLOptimResult(
+                x_opt=self._buffer,
                 success=True,
                 message="No parameters left to fit after pre-fitting",
-                loss=float(self.total_loss(y, self.predict(X), reg_lambda)),
-                niter=0,
-                nfev=0,
+                objective_value=float(self.total_loss(y, self.predict(X), reg_lambda)),
+                n_iterations=0,
+                n_function_evaluations=0,
             )
 
         # Create a mask for the parameters to fit
@@ -383,14 +372,20 @@ class MiniMLModel(ABC):
         result = optimizer(_targ_fun, p0)
         self._buffer = self._buffer.at[p_mask].set(result.x_opt)
 
-        return MiniMLFitResult(
+        # Update result with the full buffer and recompute loss if not available
+        if result.objective_value is None:
+            result.objective_value = float(_targ_fun(result.x_opt))
+        
+        # Return result with updated x_opt pointing to full buffer
+        return MiniMLOptimResult(
+            x_opt=self._buffer,
             success=result.success,
             message=result.message,
-            loss=float(_targ_fun(result.x_opt)),
-            niter=result.n_iterations or 0,
-            nfev=result.n_function_evaluations or 0,
-            njev=result.n_jacobian_evaluations,
-            nhev=result.n_hessian_evaluations,
+            objective_value=result.objective_value,
+            n_iterations=result.n_iterations,
+            n_function_evaluations=result.n_function_evaluations,
+            n_jacobian_evaluations=result.n_jacobian_evaluations,
+            n_hessian_evaluations=result.n_hessian_evaluations,
         )
 
     def save(self, filename: str | Path) -> None:

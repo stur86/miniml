@@ -36,6 +36,7 @@ class MiniMLOptimResult:
         x_opt: The optimized parameters.
         success: Whether the optimization was successful.
         message: A message describing the outcome of the optimization.
+        loss: The final loss value, if available.
         n_iterations: Number of iterations performed, if available.
         n_function_evaluations: Number of function evaluations, if available.
         n_jacobian_evaluations: Number of jacobian evaluations, if available.
@@ -45,6 +46,7 @@ class MiniMLOptimResult:
     x_opt: JxArray
     success: bool
     message: str = ""
+    objective_value: float | None = None
     n_iterations: int | None = None
     n_function_evaluations: int | None = None
     n_jacobian_evaluations: int | None = None
