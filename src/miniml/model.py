@@ -9,10 +9,12 @@ from jax import Array as JXArray
 import jax.numpy as jnp
 from numpy.typing import DTypeLike, NDArray
 from miniml.param import MiniMLError, _supported_types, MiniMLParamRef
-from miniml.loss import LossFunction, squared_error_loss
+from miniml.loss import LossFunction
 from scipy.optimize import minimize
+
 # Import Self from typing or typing_extensions based on Python version
 import sys
+
 if sys.version_info >= (3, 11):
     from typing import Self
 else:
@@ -69,11 +71,11 @@ class MiniMLModel(ABC):
         instance._init_kwargs = dict(kwargs)
         return instance
 
-    def __init__(self, loss: LossFunction | None = squared_error_loss) -> None:
+    def __init__(self, loss: LossFunction | None = None) -> None:
         """Construct a MiniML Model.
 
         Args:
-            loss (LossFunction, optional): The loss function to use. Defaults to squared_error_loss.
+            loss (LossFunction, optional): The loss function to use. Defaults to None.
 
         Raises:
             MiniMLError: If the model parameters are not properly initialized.
@@ -157,7 +159,7 @@ class MiniMLModel(ABC):
             str: The name of the data type.
         """
         return self._dtype_name
-    
+
     @property
     def param_names(self) -> list[str]:
         """Get the list of parameter names in the model.
@@ -192,7 +194,9 @@ class MiniMLModel(ABC):
         """
         if not self.bound:
             self.bind()
-        key = jax.random.key(seed if seed is not None else (time.time_ns() % (2**31 - 1)))
+        key = jax.random.key(
+            seed if seed is not None else (time.time_ns() % (2**31 - 1))
+        )
         shape = self._buffer.shape
         dtype = self._buffer.dtype
         if dtype.kind == "f":
@@ -234,9 +238,9 @@ class MiniMLModel(ABC):
 
     def regularization_loss(self, buffer: JXArray | None = None) -> JXArray:
         """Compute the total regularization loss $\\sum_i\\mathcal{R}_i(w_i)$ for all parameters and child models.
-        
+
         Args:
-            buffer (JXArray | None, optional): An optional buffer to use instead of the internal one. 
+            buffer (JXArray | None, optional): An optional buffer to use instead of the internal one.
                 Defaults to None.
 
         Returns:
@@ -248,8 +252,11 @@ class MiniMLModel(ABC):
         return reg_loss
 
     def total_loss(
-        self, y_true: JXArray, y_pred: JXArray, reg_lambda: float = 1.0,
-        buffer: JXArray | None = None
+        self,
+        y_true: JXArray,
+        y_pred: JXArray,
+        reg_lambda: float = 1.0,
+        buffer: JXArray | None = None,
     ) -> JXArray:
         """Compute the total loss as the sum of prediction loss and regularization loss, with
         a strength parameter:
@@ -262,13 +269,15 @@ class MiniMLModel(ABC):
             y_true (JXArray): Ground truth values.
             y_pred (JXArray): Predicted values.
             reg_lambda (float, optional): Regularization strength. Defaults to 1.0.
-            buffer (JXArray | None, optional): An optional buffer to use instead of the internal one. 
+            buffer (JXArray | None, optional): An optional buffer to use instead of the internal one.
                 Defaults to None.
 
         Returns:
             JXArray: The total loss.
         """
-        return self.loss(y_true, y_pred) + reg_lambda * self.regularization_loss(buffer=buffer)
+        return self.loss(y_true, y_pred) + reg_lambda * self.regularization_loss(
+            buffer=buffer
+        )
 
     @abstractmethod
     def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
@@ -288,11 +297,11 @@ class MiniMLModel(ABC):
         if not hasattr(self, "_jit_predict_kernel"):
             self._jit_predict_kernel = jax.jit(self._predict_kernel, inline=True)
         return self._jit_predict_kernel(X, buffer=self._buffer, **predict_kwargs)
-    
+
     def __call__(self, X: JXArray) -> JXArray:
         """Syntactic sugar for predict."""
         return self.predict(X)
-    
+
     def _pre_fit(self, X: JXArray, y: JXArray) -> set[str]:
         """Initialize the fit by pre-fitting some parameters based on the data.
         This method is called once before the fitting process starts.
@@ -314,7 +323,7 @@ class MiniMLModel(ABC):
         y: JXArray,
         reg_lambda: float = 1.0,
         fit_args: dict[str, Any] = {"method": "L-BFGS-B"},
-        predict_kwargs: dict[str, Any] = {}
+        predict_kwargs: dict[str, Any] = {},
     ) -> MiniMLFitResult:
         """Fit the model parameters to the data by minimizing the total loss.
         See [the SciPy docs](https://docs.scipy.org/doc/scipy-1.16.1/reference/generated/scipy.optimize.minimize.html)
@@ -335,7 +344,7 @@ class MiniMLModel(ABC):
         """
         if not self.bound:
             self.bind()
-            
+
         all_params = set(self.param_names)
         prefit_params = set(self._pre_fit(X, y))
         fit_params = all_params - prefit_params
@@ -348,7 +357,7 @@ class MiniMLModel(ABC):
                 niter=0,
                 nfev=0,
             )
-            
+
         # Create a mask for the parameters to fit
         i0 = 0
         mask_params: list[JXArray] = []
@@ -359,6 +368,7 @@ class MiniMLModel(ABC):
         p_mask = jnp.concatenate(mask_params)
 
         buffer = self._buffer
+
         def _targ_fun(p: JXArray) -> JXArray:
             nonlocal buffer
             buf_in = buffer.at[p_mask].set(p)
@@ -454,10 +464,10 @@ class MiniMLModel(ABC):
         model.bind()
         model.set_buffer(load_dict["buffer"])
         return model
-    
+
     def clone(self, with_params: bool = False) -> Self:
         """Create a clone of the model with the same parameters.
-        
+
         Args:
             with_params (bool, optional): If True, clone the model with the same parameters.
                 Otherwise, parameters are uninitialized. Defaults to False.
@@ -521,7 +531,7 @@ class MiniMLModel(ABC):
                 )
             idx = slice(p._buf_i0, p._buf_i0 + p.size)
             self._buffer = self._buffer.at[idx].set(val.reshape(-1))
-            
+
     def _get_inner_params(self) -> list[MiniMLParamRef]:
         return self._params
 
@@ -553,4 +563,8 @@ class MiniMLModelList:
         return len(self._contents)
 
     def _get_inner_params(self) -> list[MiniMLParamRef]:
-        return [p.as_child(f"{i}") for i, m in enumerate(self._contents) for p in m._get_inner_params()]
+        return [
+            p.as_child(f"{i}")
+            for i, m in enumerate(self._contents)
+            for p in m._get_inner_params()
+        ]

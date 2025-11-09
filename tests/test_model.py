@@ -194,7 +194,7 @@ def test_linear_model_fit_no_reg(method: str):
         def __init__(self):
             self.a = MiniMLParam((1,))
             self.b = MiniMLParam((1,))
-            super().__init__()
+            super().__init__(loss=squared_error_loss)
 
         def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
             return self.a(buffer) * X + self.b(buffer)
@@ -220,7 +220,7 @@ def test_linear_model_fit_with_l2_reg(method: str):
         def __init__(self):
             self.a = MiniMLParam((1,), reg_loss=LNormRegularization())
             self.b = MiniMLParam((1,))
-            super().__init__()
+            super().__init__(loss=squared_error_loss)
 
         def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
             return self.a(buffer) * X + self.b(buffer)
@@ -250,7 +250,7 @@ def test_model_list():
     class M1(MiniMLModel):
         def __init__(self):
             self.p = MiniMLParam((1,))
-            super().__init__()
+            super().__init__(loss=squared_error_loss)
 
         def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
             return super()._predict_kernel(X, buffer)
@@ -321,7 +321,7 @@ def test_pre_fit():
         def __init__(self):
             self.p1 = MiniMLParam((1,))
             self.p2 = MiniMLParam((1,))
-            super().__init__()
+            super().__init__(loss=squared_error_loss)
 
         def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
             return self.p1(buffer) * X + self.p2(buffer)
