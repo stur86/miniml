@@ -24,6 +24,7 @@ module-root = "src/"
 
 [dependency-groups]
 dev = [
+    "black>=25.9.0",
     "dvc[s3]>=3.63.0",
     "mkdocs-api-autonav>=0.3.1",
     "mkdocs-material>=9.6.18",
@@ -45,6 +46,7 @@ exclude = ["docs/**", "examples/**", "src/miniml/__init__.py"]
 [tool.taskipy.tasks]
 lint = "ruff check ."
 format = "ruff check . --fix"
+black = "black src tests"
 test = "pytest"
 build-docs = "mkdocs build"
 pull-data = "dvc pull"

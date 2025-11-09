@@ -1,6 +1,7 @@
 from miniml.nn import Identity
 import jax.numpy as jnp
 
+
 def test_identity():
     identity = Identity()
     identity.bind()
@@ -9,7 +10,7 @@ def test_identity():
     out_data = identity.predict(in_data)
 
     assert jnp.array_equal(out_data, in_data)
-    
+
     # Test with scaling
     scale = 2.0
     identity_scaled = Identity(scale=scale)

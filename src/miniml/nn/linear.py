@@ -23,11 +23,11 @@ class Linear(MiniMLModel):
         apply_bias_reg: bool = False,
     ) -> None:
         r"""Linear layer model with weights and bias.
-        
+
         $$
         \hat{y} = X W^T + b
         $$
-        
+
         Args:
             n_in (int): Number of input features.
             n_out (int): Number of output features.

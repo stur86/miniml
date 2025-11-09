@@ -2,10 +2,13 @@ from jax import Array
 from miniml.model import MiniMLModel, MiniMLModelList
 from miniml.loss import LossFunction, squared_error_loss
 
+
 class Stack(MiniMLModel):
     """A MiniML model that stacks multiple MiniML models sequentially."""
-    
-    def __init__(self, models: list[MiniMLModel], loss: LossFunction = squared_error_loss) -> None:
+
+    def __init__(
+        self, models: list[MiniMLModel], loss: LossFunction = squared_error_loss
+    ) -> None:
         """Initialize the Stack model.
 
         Args:
@@ -14,7 +17,7 @@ class Stack(MiniMLModel):
 
         Raises:
             ValueError: If the model list is empty.
-        """        
+        """
         if len(models) == 0:
             raise ValueError("Stack must contain at least one model")
         self._model_list = MiniMLModelList(models)

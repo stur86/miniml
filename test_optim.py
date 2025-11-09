@@ -6,8 +6,6 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _():
-    import marimo as mo
-    from typing import Annotated
     return
 
 

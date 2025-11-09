@@ -6,5 +6,5 @@ __all__ = [
     "MiniMLParamList",
     "MiniMLError",
     "MiniMLModel",
-    "MiniMLModelList"
+    "MiniMLModelList",
 ]

@@ -56,8 +56,8 @@ def test_binary_match_loss() -> None:
     expected_loss = jnp.mean(y_norms) - jnp.mean(y * y_logits)
 
     assert np.isclose(loss, expected_loss)
-    
+
     big_logit = 1e15
     y_exact_logits = jnp.where(y == 1, big_logit, -big_logit)
-    
+
     assert np.isclose(binary_match_loss(y, y_exact_logits), 0.0)

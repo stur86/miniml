@@ -55,5 +55,5 @@ __all__ = [
     "PolyharmonicRBF",
     "RBFLayer",
     "Identity",
-    "Parallel"
+    "Parallel",
 ]
