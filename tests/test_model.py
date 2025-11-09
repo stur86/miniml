@@ -206,7 +206,10 @@ def test_linear_model_fit_no_reg(method: str):
     model = LinearModel()
     model.bind()
     model._buffer = jnp.array([0.0, 0.0], dtype=jnp.float32)  # init to zeros
-    res = model.fit(X, y, fit_args={"method": method})
+    
+    from miniml.optim.scipy import ScipyOptimizer
+    optimizer = ScipyOptimizer(method=method)
+    res = model.fit(X, y, optimizer=optimizer)
     assert res.success
 
     a_fit, b_fit = model.a()[0], model.b()[0]
@@ -232,7 +235,10 @@ def test_linear_model_fit_with_l2_reg(method: str):
     reg_lambda = 10.0
     model = LinearModel()
     model.randomize(seed=42)
-    res = model.fit(X, y, reg_lambda=reg_lambda, fit_args={"method": method})
+    
+    from miniml.optim.scipy import ScipyOptimizer
+    optimizer = ScipyOptimizer(method=method)
+    res = model.fit(X, y, reg_lambda=reg_lambda, optimizer=optimizer)
     assert res.success
     assert jnp.isclose(res.loss, model.total_loss(y, model.predict(X), reg_lambda))
 
