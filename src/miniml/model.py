@@ -11,6 +11,12 @@ from numpy.typing import DTypeLike, NDArray
 from miniml.param import MiniMLError, _supported_types, MiniMLParamRef
 from miniml.loss import LossFunction, squared_error_loss
 from scipy.optimize import minimize
+# Import Self from typing or typing_extensions based on Python version
+import sys
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    from typing_extensions import Self
 
 
 # Generic interface for something that has parameters
@@ -448,6 +454,22 @@ class MiniMLModel(ABC):
         model.bind()
         model.set_buffer(load_dict["buffer"])
         return model
+    
+    def clone(self, with_params: bool = False) -> Self:
+        """Create a clone of the model with the same parameters.
+        
+        Args:
+            with_params (bool, optional): If True, clone the model with the same parameters.
+                Otherwise, parameters are uninitialized. Defaults to False.
+
+        Returns:
+            Self: A clone of the model.
+        """
+        clone_model = self.__class__(*self._init_args, **self._init_kwargs)  # type: ignore
+        if with_params:
+            clone_model.bind()
+            clone_model.set_buffer(self.get_buffer(copy=True))
+        return clone_model
 
     def get_buffer(self, copy: bool = True) -> JXArray:
         if copy:
@@ -499,7 +521,7 @@ class MiniMLModel(ABC):
                 )
             idx = slice(p._buf_i0, p._buf_i0 + p.size)
             self._buffer = self._buffer.at[idx].set(val.reshape(-1))
-
+            
     def _get_inner_params(self) -> list[MiniMLParamRef]:
         return self._params
 

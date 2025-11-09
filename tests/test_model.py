@@ -140,6 +140,24 @@ def test_load_before_bind(tmp_path: Path):
     m.save(save_path)
     m2 = M.load(save_path)
     assert np.allclose(m2._buffer, m._buffer)
+    
+def test_clone_model():
+    class CustomModel(MiniMLModel):
+        def __init__(self, n: int):
+            self.p = MiniMLParam((n,))
+            super().__init__()
+        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+            return X + self.p(buffer)
+        
+    m1 = CustomModel(n=3)
+    m1.bind()
+    m1.randomize(seed=42)
+    m2 = m1.clone(with_params=True)
+    assert m2.p.shape == m1.p.shape
+    assert np.allclose(m2._buffer, m1._buffer)
+    m3 = m1.clone(with_params=False)
+    assert not hasattr(m3, "_buffer")
+    assert m3.p.shape == m1.p.shape
 
 
 def test_squared_error_loss():
