@@ -1,7 +1,7 @@
 from jax import Array as JxArray
 import jax.numpy as jnp
 from scipy.optimize import minimize
-from miniml.optim.base import MiniMLOptimizer, DerivRequire, MiniMLOptimResult
+from miniml.optim.base import MiniMLOptimizer, DerivRequire, MiniMLOptimResult, ObjectiveFunction
 
 
 class ScipyOptimizer(MiniMLOptimizer):
@@ -9,10 +9,22 @@ class ScipyOptimizer(MiniMLOptimizer):
     _method: str
     _options: dict
     _tol: float | None
+    
+    _obj_only_methods = {"Nelder-Mead", "Powell", "COBYLA"}
+    _jac_methods = {"CG", "BFGS", "L-BFGS-B"}
+    _hessp_methods = {"Newton-CG", "trust-ncg", "trust-krylov", "trust-constr"}
+    _hess_methods = {"dogleg", "trust-exact"}
+    
+    _all_methods = (
+        _obj_only_methods
+        | _jac_methods
+        | _hessp_methods
+        | _hess_methods
+    )
 
     def __init__(
         self,
-        objective,
+        objective: ObjectiveFunction,
         method: str = "L-BFGS-B",
         options: dict = {},
         tol: float | None = None,
@@ -26,27 +38,31 @@ class ScipyOptimizer(MiniMLOptimizer):
     @staticmethod
     def _get_method_config(method: str) -> MiniMLOptimizer.Config:
         # Methods that don't require derivatives
-        if method in {"Nelder-Mead", "Powell", "COBYLA"}:
+        if method in ScipyOptimizer._obj_only_methods:
             return MiniMLOptimizer.Config(
                 deriv_require=DerivRequire.NONE, join_jac_and_value=False
             )
         # Methods that require Hessian-vector product
-        elif method in {"Newton-CG", "trust-ncg", "trust-krylov", "trust-constr"}:
+        elif method in ScipyOptimizer._hessp_methods:
             return MiniMLOptimizer.Config(
                 deriv_require=DerivRequire.HESSIAN_PRODUCT, join_jac_and_value=True
             )
         # Methods that require full Hessian
-        elif method in {"dogleg", "trust-exact"}:
+        elif method in ScipyOptimizer._hess_methods:
             return MiniMLOptimizer.Config(
                 deriv_require=DerivRequire.HESSIAN, join_jac_and_value=True
             )
         # Methods that require Jacobian (most common case)
-        elif method in {"CG", "BFGS", "L-BFGS-B"}:
+        elif method in ScipyOptimizer._jac_methods:
             return MiniMLOptimizer.Config(
                 deriv_require=DerivRequire.JACOBIAN, join_jac_and_value=True
             )
         else:
             raise ValueError(f"Unsupported optimization method: {method}")
+    
+    @property
+    def supported_methods(self) -> set[str]:
+        return self._all_methods
 
     def _minimize_kernel(self, x0: JxArray) -> MiniMLOptimResult:
         jac = None
