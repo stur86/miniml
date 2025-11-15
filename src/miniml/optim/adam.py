@@ -10,6 +10,11 @@ from miniml.optim.base import (
 
 
 class AdamOptimizer(MiniMLOptimizer):
+    """Adaptive Moment Estimation (Adam) optimizer.
+    
+    References:
+        - Diederik P. Kingma and Jimmy Ba. ["Adam: A Method for Stochastic Optimization."](https://arxiv.org/abs/1412.6980)
+    """
 
     def __init__(
         self,
@@ -20,6 +25,16 @@ class AdamOptimizer(MiniMLOptimizer):
         tol: float = 0.0,
         maxiter: int = 1000,
     ) -> None:
+        """Initialize the Adam optimizer.
+        
+        Args:
+            alpha (float, optional): Learning rate. Defaults to 0.001.
+            beta_1 (float, optional): Exponential decay rate for the first moment estimates. Defaults to 0.9.
+            beta_2 (float, optional): Exponential decay rate for the second moment estimates. Defaults to 0.999.
+            eps (float, optional): Small constant for numerical stability. Defaults to 1e-8.
+            tol (float, optional): Tolerance for stopping criterion based on the norm of the first moment. Defaults to 0.0.
+            maxiter (int, optional): Maximum number of iterations. Defaults to 1000.
+        """
         # Default configuration: we need the Jacobian, nothing else
         config = OptimizationMethods.Config(
             deriv_require=DerivRequire.JACOBIAN, join_jac_and_value=False

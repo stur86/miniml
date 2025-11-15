@@ -23,11 +23,13 @@ The `.fit` method returns a result value containing information such as whether 
 You can provide a custom optimizer to the `.fit` method. For example, to use a different SciPy method:
 
 ```py
-from miniml.optim.scipy import ScipyOptimizer
+from miniml.optim import ScipyOptimizer
 
 optimizer = ScipyOptimizer(method="BFGS", options={"maxiter": 100})
 res = model.fit(X, y, optimizer=optimizer)
 ```
+
+Currently `ScipyOptimizer` and `AdamOptimizer` are available.
 
 ## Pre-fitting
 

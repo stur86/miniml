@@ -10,6 +10,21 @@ from miniml.optim.base import (
 
 
 class ScipyOptimizer(MiniMLOptimizer):
+    """Optimizer that wraps scipy.optimize.minimize and supports the following methods:
+    
+    - 'Nelder-Mead'
+    - 'Powell'
+    - 'CG'
+    - 'BFGS'
+    - 'L-BFGS-B'
+    - 'Newton-CG'
+    - 'trust-ncg'
+    - 'trust-krylov'
+    - 'trust-constr'
+    - 'dogleg'
+    - 'trust-exact'
+    - 'COBYLA'
+    """
 
     _method: str
     _options: dict
@@ -28,6 +43,13 @@ class ScipyOptimizer(MiniMLOptimizer):
         options: dict = {},
         tol: float | None = None,
     ) -> None:
+        """Initialize the ScipyOptimizer.
+        
+        Args:
+            method (str, optional): The optimization method to use. Defaults to 'L-BFGS-B'.
+            options (dict, optional): Options to pass to scipy.optimize.minimize. Defaults to {}.
+            tol (float | None, optional): Tolerance for termination. Defaults to None.
+        """
         config = self._get_method_config(method)
         super().__init__(config)
         self._method = method
