@@ -22,11 +22,9 @@ from miniml.nn.rbf import (
     PolyharmonicRBF,
 )
 from miniml.nn.linear import Linear
-from miniml.nn.stack import Stack
+from miniml.nn.compose import Stack, Identity, Parallel, Take
 from miniml.nn.mlp import MLP
 from miniml.nn.rbfnet import RBFLayer
-from miniml.nn.identity import Identity
-from miniml.nn.parallel import Parallel
 from miniml.nn.embedding import Embedding
 from miniml.nn.layer_norm import LayerNorm
 from miniml.nn.mha import MultiHeadAttention
@@ -57,5 +55,6 @@ __all__ = [
     "RBFLayer",
     "Identity",
     "Parallel",
+    "Take",
     "MultiHeadAttention",
 ]
