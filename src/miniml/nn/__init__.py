@@ -29,6 +29,7 @@ from miniml.nn.identity import Identity
 from miniml.nn.parallel import Parallel
 from miniml.nn.embedding import Embedding
 from miniml.nn.layer_norm import LayerNorm
+from miniml.nn.mha import MultiHeadAttention
 
 __all__ = [
     "Linear",
@@ -56,4 +57,5 @@ __all__ = [
     "RBFLayer",
     "Identity",
     "Parallel",
+    "MultiHeadAttention",
 ]
