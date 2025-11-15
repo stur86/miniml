@@ -3,6 +3,7 @@ from typing import Generic, TypeVar
 KT = TypeVar("KT")
 VT = TypeVar("VT")
 
+
 class ImmutableBiDict(Generic[KT, VT]):
 
     def __init__(self, values: list[tuple[KT, VT]]) -> None:
@@ -24,9 +25,9 @@ class ImmutableBiDict(Generic[KT, VT]):
 
     def get_inverse(self, key: VT, default: KT | None = None) -> KT | None:
         return self._bwd.get(key, default)
-    
+
     def keys(self) -> list[KT]:
         return list(self._fwd.keys())
-    
+
     def values(self) -> list[VT]:
         return list(self._fwd.values())

@@ -14,10 +14,9 @@ def test_model_basic(tmp_path: Path):
         def __init__(self):
             self._c = MiniMLParam((1,))
             super().__init__()
-            
+
         def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
             return self._c(buffer)
-
 
     class LinearModel(MiniMLModel):
 
@@ -50,8 +49,8 @@ def test_model_basic(tmp_path: Path):
     assert m._params[1].path == "_b.v"
     assert m._params[2].param is m._c._c
     assert m._params[2].path == "_c._c.v"
-    
-    assert m.param_names == ['_M.v', '_b.v', '_c._c.v']
+
+    assert m.param_names == ["_M.v", "_b.v", "_c._c.v"]
 
     m.randomize()
 
@@ -70,7 +69,7 @@ def test_model_basic(tmp_path: Path):
     # Reload
     m_loaded = LinearModel.load(save_path)
     reloaded_vals = m_loaded.get_params()
-    
+
     for k in param_vals:
         assert np.array_equal(param_vals[k], reloaded_vals[k])
 
@@ -142,6 +141,26 @@ def test_load_before_bind(tmp_path: Path):
     assert np.allclose(m2._buffer, m._buffer)
 
 
+def test_clone_model():
+    class CustomModel(MiniMLModel):
+        def __init__(self, n: int):
+            self.p = MiniMLParam((n,))
+            super().__init__()
+
+        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+            return X + self.p(buffer)
+
+    m1 = CustomModel(n=3)
+    m1.bind()
+    m1.randomize(seed=42)
+    m2 = m1.clone(with_params=True)
+    assert m2.p.shape == m1.p.shape
+    assert np.allclose(m2._buffer, m1._buffer)
+    m3 = m1.clone(with_params=False)
+    assert not hasattr(m3, "_buffer")
+    assert m3.p.shape == m1.p.shape
+
+
 def test_squared_error_loss():
     y_true = jnp.array([1.0, 2.0, 3.0])
     y_pred = jnp.array([1.0, 2.5, 2.0])
@@ -176,7 +195,7 @@ def test_linear_model_fit_no_reg(method: str):
         def __init__(self):
             self.a = MiniMLParam((1,))
             self.b = MiniMLParam((1,))
-            super().__init__()
+            super().__init__(loss=squared_error_loss)
 
         def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
             return self.a(buffer) * X + self.b(buffer)
@@ -187,7 +206,10 @@ def test_linear_model_fit_no_reg(method: str):
     model = LinearModel()
     model.bind()
     model._buffer = jnp.array([0.0, 0.0], dtype=jnp.float32)  # init to zeros
-    res = model.fit(X, y, fit_args={"method": method})
+    
+    from miniml.optim.scipy import ScipyOptimizer
+    optimizer = ScipyOptimizer(method=method)
+    res = model.fit(X, y, optimizer=optimizer)
     assert res.success
 
     a_fit, b_fit = model.a()[0], model.b()[0]
@@ -202,7 +224,7 @@ def test_linear_model_fit_with_l2_reg(method: str):
         def __init__(self):
             self.a = MiniMLParam((1,), reg_loss=LNormRegularization())
             self.b = MiniMLParam((1,))
-            super().__init__()
+            super().__init__(loss=squared_error_loss)
 
         def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
             return self.a(buffer) * X + self.b(buffer)
@@ -213,9 +235,12 @@ def test_linear_model_fit_with_l2_reg(method: str):
     reg_lambda = 10.0
     model = LinearModel()
     model.randomize(seed=42)
-    res = model.fit(X, y, reg_lambda=reg_lambda, fit_args={"method": method})
+    
+    from miniml.optim.scipy import ScipyOptimizer
+    optimizer = ScipyOptimizer(method=method)
+    res = model.fit(X, y, reg_lambda=reg_lambda, optimizer=optimizer)
     assert res.success
-    assert jnp.isclose(res.loss, model.total_loss(y, model.predict(X), reg_lambda))
+    assert jnp.isclose(res.objective_value, model.total_loss(y, model.predict(X), reg_lambda))
 
     a_fit, b_fit = model.a()[0], model.b()[0]
     # Analytical ridge regression solution for a: a = Sxy / (Sxx + lambda)
@@ -232,7 +257,7 @@ def test_model_list():
     class M1(MiniMLModel):
         def __init__(self):
             self.p = MiniMLParam((1,))
-            super().__init__()
+            super().__init__(loss=squared_error_loss)
 
         def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
             return super()._predict_kernel(X, buffer)
@@ -241,7 +266,7 @@ def test_model_list():
         def __init__(self):
             self.p = MiniMLParam((2,))
             super().__init__()
-        
+
         def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
             return super()._predict_kernel(X, buffer)
 
@@ -250,11 +275,14 @@ def test_model_list():
     assert isinstance(mlist._contents[0], M1)
     assert isinstance(mlist._contents[1], M2)
     assert len(mlist._get_inner_params()) == 2
-    
+
     for i in range(2):
         assert mlist._get_inner_params()[i].param is mlist._contents[i]._params[0].param
-        assert mlist._get_inner_params()[i].path == f"{i}." + mlist._contents[i]._params[0].path
-    
+        assert (
+            mlist._get_inner_params()[i].path
+            == f"{i}." + mlist._contents[i]._params[0].path
+        )
+
 
 def test_model_set_get_params():
     class M(MiniMLModel):
@@ -271,39 +299,40 @@ def test_model_set_get_params():
     m.set_buffer(jnp.arange(5, dtype=jnp.float32))
     params = m.get_params()
     assert m.size == 5
-    
+
     assert len(params) == 2
-    assert list(params.keys()) == ['p1.v', 'p2.v']
-    assert np.array_equal(params['p1.v'], jnp.array([0.0, 1.0], dtype=jnp.float32))
-    assert np.array_equal(params['p2.v'], jnp.array([2.0, 3.0, 4.0], dtype=jnp.float32))
+    assert list(params.keys()) == ["p1.v", "p2.v"]
+    assert np.array_equal(params["p1.v"], jnp.array([0.0, 1.0], dtype=jnp.float32))
+    assert np.array_equal(params["p2.v"], jnp.array([2.0, 3.0, 4.0], dtype=jnp.float32))
 
     # Now try setting instead
     new_params = {
-        'p1.v': jnp.array([10.0, 20.0], dtype=jnp.float32),
-        'p2.v': jnp.array([30.0, 40.0, 50.0], dtype=jnp.float32)
+        "p1.v": jnp.array([10.0, 20.0], dtype=jnp.float32),
+        "p2.v": jnp.array([30.0, 40.0, 50.0], dtype=jnp.float32),
     }
     m.set_params(new_params)
-    assert np.array_equal(m.p1(), new_params['p1.v'])
-    assert np.array_equal(m.p2(), new_params['p2.v'])
+    assert np.array_equal(m.p1(), new_params["p1.v"])
+    assert np.array_equal(m.p2(), new_params["p2.v"])
 
     # Try a non-existing parameter
     with pytest.raises(MiniMLError, match="Parameter name not found:"):
-        m.set_params({'p3.v': jnp.array([1.0], dtype=jnp.float32)})
-        
+        m.set_params({"p3.v": jnp.array([1.0], dtype=jnp.float32)})
+
     # Try the wrong size
     with pytest.raises(MiniMLError, match="Parameter shape mismatch for"):
-        m.set_params({'p1.v': jnp.array([1.0], dtype=jnp.float32)})
-        
+        m.set_params({"p1.v": jnp.array([1.0], dtype=jnp.float32)})
+
     # Or the wrong dtype
     with pytest.raises(MiniMLError, match="Parameter dtype mismatch for"):
-        m.set_params({'p1.v': jnp.array([1, 2], dtype=jnp.int32)})
+        m.set_params({"p1.v": jnp.array([1, 2], dtype=jnp.int32)})
+
 
 def test_pre_fit():
     class M(MiniMLModel):
         def __init__(self):
             self.p1 = MiniMLParam((1,))
             self.p2 = MiniMLParam((1,))
-            super().__init__()
+            super().__init__(loss=squared_error_loss)
 
         def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
             return self.p1(buffer) * X + self.p2(buffer)
@@ -319,7 +348,7 @@ def test_pre_fit():
     model = M()
     model.bind()
     model.randomize(seed=42)
-    
+
     # The model should fix the first parameter to 0,
     # which means the second should be the average of y
     model.fit(X, y)

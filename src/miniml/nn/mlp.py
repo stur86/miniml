@@ -1,11 +1,16 @@
 from jax import Array as JXArray
 from miniml.model import MiniMLModel
-from miniml.loss import RegLossFunction, LNormRegularization, LossFunction, squared_error_loss
+from miniml.loss import (
+    RegLossFunction,
+    LNormRegularization,
+    LossFunction,
+    squared_error_loss,
+)
 from miniml.param import MiniMLError, DTypeLike
 import jax.numpy as jnp
 from miniml.nn.activations import relu, ActivationFunction, Activation
 from miniml.nn.linear import Linear
-from miniml.nn.stack import Stack
+from miniml.nn.compose import Stack
 
 
 class MLP(MiniMLModel):

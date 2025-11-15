@@ -1,12 +1,13 @@
 [project]
 name = "miniml-jax"
-version = "0.4.0"
+version = "0.5.0"
 description = "MiniML - a minimalistic ML framework"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "jax>=0.7.1",
     "scipy>=1.16.1",
+    "typing-extensions>=4.15.0 ; python_full_version < '3.11'",
 ]
 
 [project.urls]
@@ -23,6 +24,7 @@ module-root = "src/"
 
 [dependency-groups]
 dev = [
+    "black>=25.9.0",
     "dvc[s3]>=3.63.0",
     "mkdocs-api-autonav>=0.3.1",
     "mkdocs-material>=9.6.18",
@@ -44,7 +46,8 @@ exclude = ["docs/**", "examples/**", "src/miniml/__init__.py"]
 [tool.taskipy.tasks]
 lint = "ruff check ."
 format = "ruff check . --fix"
-test = "pytest"
+black = "black src tests"
+test = "pytest -v"
 build-docs = "mkdocs build"
 pull-data = "dvc pull"
 import-dvc-files = "python scripts/import_dvc.py"
