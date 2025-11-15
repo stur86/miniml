@@ -14,7 +14,7 @@ class Parallel(MiniMLModel):
         models: list[MiniMLModel],
         mode: Literal["sum", "concat"],
         concat_axis: int = -1,
-        loss: LossFunction = squared_error_loss
+        loss: LossFunction = squared_error_loss,
     ) -> None:
         """Initialize the Parallel model.
 

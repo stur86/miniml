@@ -1,7 +1,6 @@
 import numpy as np
 from abc import ABC, abstractmethod
 from pathlib import Path
-from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable, Type, TypeVar
 import time
 import jax
@@ -10,7 +9,8 @@ import jax.numpy as jnp
 from numpy.typing import DTypeLike, NDArray
 from miniml.param import MiniMLError, _supported_types, MiniMLParamRef
 from miniml.loss import LossFunction
-from scipy.optimize import minimize
+from miniml.optim.base import MiniMLOptimizer, MiniMLOptimResult
+from miniml.optim.scipy import ScipyOptimizer
 
 # Import Self from typing or typing_extensions based on Python version
 import sys
@@ -26,17 +26,6 @@ else:
 class ParametrizedObject(Protocol):
 
     def _get_inner_params(self) -> list[MiniMLParamRef]: ...
-
-
-@dataclass
-class MiniMLFitResult:
-    success: bool
-    message: str
-    loss: float
-    niter: int
-    nfev: int
-    njev: int | None = None
-    nhev: int | None = None
 
 
 T = TypeVar("T", bound="MiniMLModel")
@@ -322,40 +311,42 @@ class MiniMLModel(ABC):
         X: JXArray,
         y: JXArray,
         reg_lambda: float = 1.0,
-        fit_args: dict[str, Any] = {"method": "L-BFGS-B"},
+        optimizer: MiniMLOptimizer | None = None,
         predict_kwargs: dict[str, Any] = {},
-    ) -> MiniMLFitResult:
+    ) -> MiniMLOptimResult:
         """Fit the model parameters to the data by minimizing the total loss.
-        See [the SciPy docs](https://docs.scipy.org/doc/scipy-1.16.1/reference/generated/scipy.optimize.minimize.html)
-        for details on the optimization arguments.
 
         Args:
             X (JXArray): Input features.
             y (JXArray): Target values.
             reg_lambda (float, optional): Regularization strength. Defaults to 1.0.
-            fit_args (dict[str, Any], optional): Arguments for the optimizer.
-                Refer to the documentation for scipy.minimize for details.
-                Defaults to {"method": "L-BFGS-B"}.
+            optimizer (MiniMLOptimizer | None, optional): The optimizer to use.
+                If None, uses L-BFGS-B ScipyOptimizer. Defaults to None.
             predict_kwargs (dict[str, Any], optional): Additional arguments to pass to the predict method.
                 Defaults to {}.
 
         Returns:
-            MiniMLFitResult: An object containing information about the fitting process.
+            MiniMLOptimResult: An object containing information about the fitting process.
         """
         if not self.bound:
             self.bind()
+
+        # Use L-BFGS-B ScipyOptimizer as default
+        if optimizer is None:
+            optimizer = ScipyOptimizer(method="L-BFGS-B")
 
         all_params = set(self.param_names)
         prefit_params = set(self._pre_fit(X, y))
         fit_params = all_params - prefit_params
 
         if len(fit_params) == 0:
-            return MiniMLFitResult(
+            return MiniMLOptimResult(
+                x_opt=self._buffer,
                 success=True,
                 message="No parameters left to fit after pre-fitting",
-                loss=float(self.total_loss(y, self.predict(X), reg_lambda)),
-                niter=0,
-                nfev=0,
+                objective_value=float(self.total_loss(y, self.predict(X), reg_lambda)),
+                n_iterations=0,
+                n_function_evaluations=0,
             )
 
         # Create a mask for the parameters to fit
@@ -376,48 +367,25 @@ class MiniMLModel(ABC):
             loss = self.total_loss(y, y_pred, reg_lambda, buf_in)
             return loss
 
-        # Does the method require a jacobian?
-        method: str = fit_args.get("method", "L-BFGS-B")
-        requires_jac = method not in {"Nelder-Mead", "Powell"}
-        # Does it require a hessian product?
-        requires_hessp = method in {
-            "Newton-CG",
-            "trust-ncg",
-            "trust-krylov",
-            "trust-constr",
-        }
-        # Does it require directly a hessian?
-        requires_hess = method in {"dogleg", "trust-exact"}
-
-        if requires_jac:
-            _targ_fun_opt = jax.jit(jax.value_and_grad(_targ_fun), inline=True)
-        else:
-            _targ_fun_opt = jax.jit(_targ_fun, inline=True)
-
-        if requires_hessp:
-            _targ_jac = jax.jit(jax.grad(_targ_fun), inline=True)
-
-            def jac_dir(x, p):
-                return _targ_jac(x) @ p
-
-            _targ_hessp = jax.jit(jax.grad(jac_dir, argnums=0), inline=True)
-            fit_args["hessp"] = _targ_hessp
-        if requires_hess:
-            _targ_hess = jax.jit(jax.hessian(_targ_fun), inline=True)
-            fit_args["hess"] = _targ_hess
         p0 = self._buffer[p_mask]
 
-        sol = minimize(_targ_fun_opt, p0, jac=requires_jac, **fit_args)
-        self._buffer = self._buffer.at[p_mask].set(sol.x)
+        result = optimizer(_targ_fun, p0)
+        self._buffer = self._buffer.at[p_mask].set(result.x_opt)
 
-        return MiniMLFitResult(
-            success=sol.success,
-            message=sol.message,
-            loss=sol.fun,
-            niter=sol.nit,
-            nfev=sol.nfev,
-            njev=sol.get("njev", None),
-            nhev=sol.get("nhev", None),
+        # Update result with the full buffer and recompute loss if not available
+        if result.objective_value is None:
+            result.objective_value = float(_targ_fun(result.x_opt))
+        
+        # Return result with updated x_opt pointing to full buffer
+        return MiniMLOptimResult(
+            x_opt=self._buffer,
+            success=result.success,
+            message=result.message,
+            objective_value=result.objective_value,
+            n_iterations=result.n_iterations,
+            n_function_evaluations=result.n_function_evaluations,
+            n_jacobian_evaluations=result.n_jacobian_evaluations,
+            n_hessian_evaluations=result.n_hessian_evaluations,
         )
 
     def save(self, filename: str | Path) -> None:

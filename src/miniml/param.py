@@ -46,7 +46,7 @@ class MiniMLParam:
         shape: tuple[int, ...],
         dtype: DTypeLike = np.float32,
         reg_loss: RegLossFunction | None = None,
-        reg_scale: float = 1.0
+        reg_scale: float = 1.0,
     ) -> None:
         """Construct a MiniML Parameter
 
@@ -140,7 +140,7 @@ class MiniMLParam:
         """
         if self._reg_loss is None:
             return jnp.array(0.0, dtype=jnp.dtype(self._dtype))
-        return self._reg_loss(self(buffer))*self._reg_scale
+        return self._reg_loss(self(buffer)) * self._reg_scale
 
     def unbind(self) -> None:
         """Unbind this parameter from its buffer container."""
@@ -175,7 +175,7 @@ class MiniMLParam:
         else:
             self._validate_buffer(i0, buffer)
         return buffer[i0:i1].reshape(self.shape)
-    
+
     @property
     def value(self) -> JXArray:
         """Get the value of the parameter from the bound buffer.
@@ -221,7 +221,7 @@ class MiniMLParamList:
     def contents(self) -> list[MiniMLParam]:
         """The list of parameters."""
         return self._contents
-        
+
     def __getitem__(self, index: int) -> MiniMLParam:
         """Access a parameter by index."""
         return self._contents[index]
