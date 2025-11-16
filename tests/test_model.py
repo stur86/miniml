@@ -240,7 +240,7 @@ def test_linear_model_fit_with_l2_reg(method: str):
     optimizer = ScipyOptimizer(method=method)
     res = model.fit(X, y, reg_lambda=reg_lambda, optimizer=optimizer)
     assert res.success
-    assert jnp.isclose(res.objective_value, model.total_loss(y, model.predict(X), reg_lambda))
+    assert jnp.isclose(res.objective_value, model.total_loss(y, model.predict(X), reg_lambda)) # type: ignore
 
     a_fit, b_fit = model.a()[0], model.b()[0]
     # Analytical ridge regression solution for a: a = Sxy / (Sxx + lambda)

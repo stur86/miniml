@@ -1,4 +1,5 @@
 import numpy as np
+from pathlib import Path
 from miniml.nn import Stack, Linear, Identity, Parallel, Take
 import jax.numpy as jnp
 
@@ -42,6 +43,30 @@ def test_stack():
 
     assert np.allclose(out_data, out_target)
 
+def test_stack_save_and_load(tmp_path: Path):
+    # Create a stack model
+    l1 = Linear(n_in=2, n_out=2)
+    l2 = Linear(n_in=2, n_out=2)
+
+    stack = Stack([l1, l2])
+    stack.bind()
+
+    # Save the model
+    model_path = tmp_path / "stack_model.npz"
+    stack.save(model_path)
+    
+    assert model_path.exists()
+
+    # Load the model
+    loaded_stack = Stack.load(model_path)
+    loaded_stack.bind()
+
+    # Verify that the loaded model produces the same output
+    in_data = jnp.array([[1, 2], [3, 4], [5, 6]], dtype=jnp.float32)
+    out_data_original = stack.predict(in_data)
+    out_data_loaded = loaded_stack.predict(in_data)
+
+    assert jnp.array_equal(out_data_original, out_data_loaded)
 
 def test_parallel_sum():
     model1 = Identity()
@@ -91,3 +116,4 @@ def test_take():
 
     expected_output_scalar = jnp.array([20, 50], dtype=jnp.float32)
     assert jnp.array_equal(out_data_scalar, expected_output_scalar)
+
