@@ -447,10 +447,18 @@ class MiniMLModel(ABC):
         args = init["args"]
         kwargs = init["kwargs"]
 
-        model = cls(*args, **kwargs)  # type: ignore
-        model.bind()
-        model.set_buffer(load_dict["buffer"])
-        return model
+        try:
+            model = cls(*args, **kwargs)  # type: ignore
+            model.bind()
+            model.set_buffer(load_dict["buffer"])
+            return model
+        except Exception as e:
+            # When this happens, it's often because some of the arguments
+            # are not well-serialized by numpy, or include stateful models.
+            # In this case, we should suggest using load_state() instead.
+            raise MiniMLError(
+                f"Failed to load model using full state. Consider using manual initialization and load_state(). Original error:\n{e}"
+            )
     
     def load_state(self, filename: str | Path) -> None:
         """Load only the model parameters from a file
