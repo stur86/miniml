@@ -53,13 +53,13 @@ def test_stack_save_and_load(tmp_path: Path):
 
     # Save the model
     model_path = tmp_path / "stack_model.npz"
-    stack.save(model_path)
+    stack.save(model_path, state_only=True)
     
     assert model_path.exists()
 
     # Load the model
-    loaded_stack = Stack.load(model_path)
-    loaded_stack.bind()
+    loaded_stack = Stack([Linear(n_in=2, n_out=2), Linear(n_in=2, n_out=2)])
+    loaded_stack.load_state(model_path)
 
     # Verify that the loaded model produces the same output
     in_data = jnp.array([[1, 2], [3, 4], [5, 6]], dtype=jnp.float32)

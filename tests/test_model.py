@@ -72,7 +72,37 @@ def test_model_basic(tmp_path: Path):
 
     for k in param_vals:
         assert np.array_equal(param_vals[k], reloaded_vals[k])
+        
+    # Try saving only state
+    save_state_path = tmp_path / "model_state.npz"
+    m_loaded.save(save_state_path, state_only=True)
+    # Create a new model with the same initialization arguments
+    m2 = LinearModel()
+    m2.load_state(save_state_path)
+    state_loaded_vals = m2.get_params()
+    for k in param_vals:
+        assert np.array_equal(param_vals[k], state_loaded_vals[k])
 
+def test_bind_and_unbind():
+    class M(MiniMLModel):
+        def __init__(self):
+            self.p = MiniMLParam((2,))
+            super().__init__()
+
+        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+            return super()._predict_kernel(X, buffer)
+
+    m = M()
+    with pytest.raises(MiniMLError, match="Model parameters are not bound to a buffer"):
+        m.unbind()
+
+    m.bind()
+    assert m.bound
+    assert m.p.bound
+
+    m.unbind()
+    assert not m.bound
+    assert not m.p.bound
 
 def test_dtype_mismatch():
     class ModelA(MiniMLModel):

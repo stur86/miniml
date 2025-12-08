@@ -174,6 +174,15 @@ class MiniMLModel(ABC):
         for p in self._params:
             p.param.bind(i0, self)
             i0 += p.param.size
+            
+    def unbind(self) -> None:
+        """Unbind the model parameters from the buffer."""
+        if not self.bound:
+            raise MiniMLError("Model parameters are not bound to a buffer")
+
+        for p in self._params:
+            p.param.unbind()
+        del self._buffer
 
     def randomize(self, seed: int | None = None) -> None:
         """Randomize the parameters of the model using JAX random generators.
@@ -388,11 +397,16 @@ class MiniMLModel(ABC):
             n_hessian_evaluations=result.n_hessian_evaluations,
         )
 
-    def save(self, filename: str | Path) -> None:
+    def save(self, filename: str | Path, state_only: bool = False) -> None:
         """Save the model parameters to a file.
 
         Args:
             filename (str | Path): The file name.
+            state_only (bool, optional): If True, do not save initialization arguments.
+                This means only load_state() can be used to restore the model, and
+                the user must guarantee that the model structure is the same.
+                Helps in cases in which the regular save/load mechanism fails.
+                Defaults to False.
         """
         if not self.bound:
             raise MiniMLError(
@@ -405,12 +419,17 @@ class MiniMLModel(ABC):
                 "kwargs": self._init_kwargs,
             }
         ]
-
+        
+        save_args = {
+            "buffer": self._buffer,
+            "metadata": [metadata],
+        }
+        if not state_only:
+            save_args["init"] = init            
+        
         np.savez_compressed(
             filename,
-            buffer=self._buffer,
-            init=init,  # type: ignore
-            metadata=[metadata],  # type: ignore
+            **save_args
         )
 
     @classmethod
@@ -432,6 +451,21 @@ class MiniMLModel(ABC):
         model.bind()
         model.set_buffer(load_dict["buffer"])
         return model
+    
+    def load_state(self, filename: str | Path) -> None:
+        """Load only the model parameters from a file
+        created with state_only=True in save().
+
+        Args:
+            filename (str | Path): The file name.
+        """
+        load_dict = np.load(filename, allow_pickle=True)
+        mdata = load_dict["metadata"][0]
+        assert mdata["model_name"] == self.__class__.__name__, "Model is not same class"
+
+        if not self.bound:
+            self.bind()
+        self.set_buffer(load_dict["buffer"])
 
     def clone(self, with_params: bool = False) -> Self:
         """Create a clone of the model with the same parameters.
