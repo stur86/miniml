@@ -6,6 +6,7 @@ from typing import Any, Protocol, runtime_checkable, Type, TypeVar, TypeAlias, U
 from dataclasses import dataclass
 
 import jax
+import warnings
 from jax import Array as JXArray
 import jax.numpy as jnp
 from numpy.typing import DTypeLike, NDArray
@@ -92,7 +93,7 @@ class MiniMLConfig:
         # We assume the other types are already valid
         return obj 
 
-    def __init__(self, class_name: str, args: list[MiniMLArgsType] = [], kwargs: dict[str, MiniMLArgsType] = {}, 
+    def __init__(self, class_name: str, args: list[Any] = [], kwargs: dict[str, Any] = {}, 
                  registry: CallablesRegistry = CallablesRegistry([])) -> None:
         """Construct a MiniMLModel configuration.
 
@@ -106,29 +107,7 @@ class MiniMLConfig:
         self._registry = registry
         self._args = self._validate_args(args)          # type: ignore
         self._kwargs = self._validate_args(kwargs)      # type: ignore
-        
-    @classmethod
-    def create_config(cls, class_type: Type["MiniMLModel"], args: list[Any], kwargs: dict[str, Any]) -> "MiniMLConfig":
-        """Validate and create a MiniMLModel configuration from given arguments.
-
-        Args:
-            class_type (Type[MiniMLModel]): The MiniMLModel class type.
-            args (list[Any]): Positional arguments for the constructor.
-            kwargs (dict[str, Any]): Named arguments for the constructor.
             
-        Returns:
-            MiniMLConfig: The validated MiniMLModel configuration.
-        """
-        
-        class_name = class_type.__name__
-        # Build the registry
-        import miniml.loss
-        import miniml.nn.activations
-        
-        registry = CallablesRegistry([miniml.loss, miniml.nn.activations])
-        
-        return cls(class_name=class_name, args=args, kwargs=kwargs, registry=registry)
-    
     def hydrate(self, class_type: Type[T]) -> T:
         """Hydrate the configuration into a MiniMLModel instance.
 
@@ -192,14 +171,21 @@ class MiniMLModel(ABC):
     _params: list[MiniMLParamRef]
     _loss_f: LossFunction | None = None
 
-    # Stored call arguments
-    _init_args: list[Any]
-    _init_kwargs: dict[str, Any]
+    # Stored construction config
+    _init_config: MiniMLConfig | None = None
 
     def __new__(cls: Type[T], *args, **kwargs) -> T:
         instance = super().__new__(cls)  # type: ignore
-        instance._init_args = list(args)
-        instance._init_kwargs = dict(kwargs)
+        # Build up custom callable registry
+        try:
+            config = cls._get_config(args, kwargs) # type: ignore
+            instance._init_config = config
+        except Exception as e:
+            warnings.warn(f"""Could not build MiniMLConfig for {cls.__name__}: {e}.
+The model may not be properly serializable. You should use save(state_only=True) and load_state() instead.
+
+Consider overriding the get_config() class method to provide custom behavior if needed.""")
+        
         return instance
 
     def __init__(self, loss: LossFunction | None = None) -> None:
@@ -245,7 +231,69 @@ class MiniMLModel(ABC):
         self._dtype_name = _supported_types.get_inverse(dtype)  # type: ignore
         # Calculate total size
         self._buffer_size = sum(pref.param.size for pref in self._params)
+        
+    @classmethod
+    def _get_callables_registry(cls) -> CallablesRegistry:
+        """Get a CallablesRegistry for this model class.
 
+        The user should override this method in subclasses if custom
+        behavior is needed.
+
+        Returns:
+            CallablesRegistry: The callables registry.
+        """
+        import miniml.loss
+        import miniml.nn.activations
+        registry = CallablesRegistry(
+            [miniml.loss, miniml.nn.activations]
+        )
+        return registry
+        
+    @classmethod
+    def _get_config(cls: Type["MiniMLModel"], args: list[Any], kwargs: dict[str, Any]) -> MiniMLConfig:
+        """Get the MiniMLConfig for this model class with the given arguments.
+        This configuration object is used to reconstruct the model later,
+        if it's loaded from a file.
+        
+        The user should override this method in subclasses if custom
+        behavior is needed.
+
+        Args:
+            args (list[Any]): Positional arguments.
+            kwargs (dict[str, Any]): Named arguments.
+
+        Returns:
+            MiniMLConfig: The configuration object.
+        """
+        # Build up custom callable registry
+        registry = cls._get_callables_registry()
+        config = MiniMLConfig(
+            class_name=cls.__name__,
+            args=list(args),
+            kwargs=kwargs,
+            registry=registry,
+        )
+        return config
+    
+    @classmethod
+    def from_dehydrated(cls: Type[T], args: list[MiniMLArgsType], kwargs: dict[str, MiniMLArgsType]) -> T:
+        """Construct a MiniMLModel from dehydrated arguments.
+
+        Args:
+            args (list[MiniMLArgsType]): Positional arguments.
+            kwargs (dict[str, MiniMLArgsType]): Named arguments.
+        Returns:
+            T: An instance of the MiniMLModel.
+        """
+        registry = cls._get_callables_registry()
+        config = MiniMLConfig(
+            class_name=cls.__name__,
+            args=args,
+            kwargs=kwargs,
+            registry=registry,
+        )
+        return config.hydrate(cls)
+    
     @property
     def bound(self) -> bool:
         """Check if the model parameters are bound to a buffer.
@@ -555,18 +603,22 @@ class MiniMLModel(ABC):
                 "Model parameters have not been bound to buffers; can not save"
             )
         metadata = {"model_name": self.__class__.__name__}
-        init = [
-            {
-                "args": self._init_args,
-                "kwargs": self._init_kwargs,
-            }
-        ]
-
         save_args = {
             "buffer": self._buffer,
             "metadata": [metadata],
         }
         if not state_only:
+            if self._init_config is None:
+                raise MiniMLError(
+                    "Model initialization configuration is not available; can not save full model. Consider using state_only=True."
+                )
+            config = self._init_config
+            init = [
+                {
+                    "args": config.args,        # type: ignore
+                    "kwargs": config.kwargs,    # type: ignore
+                }
+            ]
             save_args["init"] = init
 
         np.savez_compressed(filename, **save_args)
@@ -587,7 +639,7 @@ class MiniMLModel(ABC):
         kwargs = init["kwargs"]
 
         try:
-            model = cls(*args, **kwargs)  # type: ignore
+            model = cls.from_dehydrated(args, kwargs)
             model.bind()
             model.set_buffer(load_dict["buffer"])
             return model
@@ -624,7 +676,13 @@ class MiniMLModel(ABC):
         Returns:
             Self: A clone of the model.
         """
-        clone_model = self.__class__(*self._init_args, **self._init_kwargs)  # type: ignore
+        if self._init_config is None:
+            raise MiniMLError(
+                "Model initialization configuration is not available; can not clone. "
+                "Consider using save(state_only=True) and load_state() instead."
+            )
+        
+        clone_model = self._init_config.hydrate(self.__class__)  # type: ignore
         if with_params:
             clone_model.bind()
             clone_model.set_buffer(self.get_buffer(copy=True))
