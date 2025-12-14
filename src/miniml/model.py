@@ -1,8 +1,10 @@
+import time
 import numpy as np
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable, Type, TypeVar
-import time
+from typing import Any, Protocol, runtime_checkable, Type, TypeVar, TypeAlias, Union
+from dataclasses import dataclass
+
 import jax
 from jax import Array as JXArray
 import jax.numpy as jnp
@@ -11,6 +13,7 @@ from miniml.param import MiniMLError, _supported_types, MiniMLParamRef
 from miniml.loss import LossFunction
 from miniml.optim.base import MiniMLOptimizer, MiniMLOptimResult
 from miniml.optim.scipy import ScipyOptimizer
+from miniml.utils import CallablesRegistry
 
 # Import Self from typing or typing_extensions based on Python version
 import sys
@@ -30,6 +33,145 @@ class ParametrizedObject(Protocol):
 
 T = TypeVar("T", bound="MiniMLModel")
 
+@dataclass
+class _MiniMLFunctionRef:
+    """A dataclass that replaces a function reference with its module path and name."""
+    key: str
+
+MiniMLArgsType: TypeAlias = Union[
+    int,
+    float,
+    str,
+    bool,
+    type[None],
+    bytes,
+    _MiniMLFunctionRef,
+    list["MiniMLArgsType"],
+    dict[str, "MiniMLArgsType"],
+    set["MiniMLArgsType"],
+    tuple["MiniMLArgsType", ...]
+]
+
+
+class MiniMLConfig:
+    """A configuration describing type and arguments necessary to construct a MiniMLModel."""
+    _class_name: str
+    _args: list[MiniMLArgsType]
+    _kwargs: dict[str, MiniMLArgsType]
+    _registry: CallablesRegistry
+    
+    def _validate_args(self, obj: Any) -> MiniMLArgsType:
+        if isinstance(obj, (int, float, str, bool, type(None), bytes)):
+            return obj # type: ignore
+        elif hasattr(obj, "__call__"):
+            # Is it in the registry?
+            ans = self._registry.dict.get_inverse(obj, default=None)
+            if ans is None:
+                raise ValueError(f"Callable {obj} not found in CallablesRegistry")
+            return _MiniMLFunctionRef(key=ans)  # type: ignore
+        elif isinstance(obj, list):
+            return list(self._validate_args(item) for item in obj)
+        elif isinstance(obj, dict):
+            keys = obj.keys()
+            if not all(isinstance(k, str) for k in keys):
+                raise ValueError("Only string keys are supported in MiniMLConfig dict arguments")
+            return {k: self._validate_args(v) for k, v in obj.items()}
+        elif isinstance(obj, set):
+            return set(self._validate_args(item) for item in obj)
+        elif isinstance(obj, tuple):
+            return tuple(self._validate_args(item) for item in obj)
+        else:
+            raise ValueError(f"Unsupported argument type: {type(obj)}")
+        
+    def _hydrate_args(self, obj: MiniMLArgsType) -> Any:
+        if isinstance(obj, _MiniMLFunctionRef):
+            func = self._registry.dict.get(obj.key, default=None)
+            if func is None:
+                raise ValueError(f"Callable with key {obj.key} not found in CallablesRegistry")
+            return func
+        # We assume the other types are already valid
+        return obj 
+
+    def __init__(self, class_name: str, args: list[MiniMLArgsType] = [], kwargs: dict[str, MiniMLArgsType] = {}, 
+                 registry: CallablesRegistry = CallablesRegistry([])) -> None:
+        """Construct a MiniMLModel configuration.
+
+        Args:
+            class_name (str): The class name.
+            args (list[MiniMLArgsType], optional): Positional arguments for the constructor. Defaults to [].
+            kwargs (dict[str, MiniMLArgsType], optional): Named arguments for the constructor. Defaults to {}.
+            registry (CallablesRegistry, optional): A registry of callables for function arguments. Defaults to CallablesRegistry([]).
+        """
+        self._class_name = class_name
+        self._registry = registry
+        self._args = self._validate_args(args)          # type: ignore
+        self._kwargs = self._validate_args(kwargs)      # type: ignore
+        
+    @classmethod
+    def create_config(cls, class_type: Type["MiniMLModel"], args: list[Any], kwargs: dict[str, Any]) -> "MiniMLConfig":
+        """Validate and create a MiniMLModel configuration from given arguments.
+
+        Args:
+            class_type (Type[MiniMLModel]): The MiniMLModel class type.
+            args (list[Any]): Positional arguments for the constructor.
+            kwargs (dict[str, Any]): Named arguments for the constructor.
+            
+        Returns:
+            MiniMLConfig: The validated MiniMLModel configuration.
+        """
+        
+        class_name = class_type.__name__
+        # Build the registry
+        import miniml.loss
+        import miniml.nn.activations
+        
+        registry = CallablesRegistry([miniml.loss, miniml.nn.activations])
+        
+        return cls(class_name=class_name, args=args, kwargs=kwargs, registry=registry)
+    
+    def hydrate(self, class_type: Type[T]) -> T:
+        """Hydrate the configuration into a MiniMLModel instance.
+
+        Args:
+            class_type (Type[T]): The MiniMLModel class type.
+            
+        Returns:
+            T: An instance of the MiniMLModel.
+        """
+        if class_type.__name__ != self._class_name:
+            raise ValueError(f"Class name mismatch: expected {self._class_name}, got {class_type.__name__}")
+        
+        hydrated_args = [self._hydrate_args(arg) for arg in self._args]
+        hydrated_kwargs = {k: self._hydrate_args(v) for k, v in self._kwargs.items()}
+        
+        return class_type(*hydrated_args, **hydrated_kwargs)  # type: ignore
+        
+    @property
+    def class_name(self) -> str:
+        """Get the class name.
+
+        Returns:
+            str: The class name.
+        """
+        return self._class_name
+    
+    @property
+    def args(self) -> list[MiniMLArgsType]:
+        """Get the positional arguments.
+
+        Returns:
+            list[Any]: The positional arguments.
+        """
+        return self._args
+
+    @property
+    def kwargs(self) -> dict[str, MiniMLArgsType]:
+        """Get the named arguments.
+
+        Returns:
+            dict[str, MiniMLArgsType]: The named arguments.
+        """
+        return self._kwargs
 
 class MiniMLModel(ABC):
     """MiniML Model
@@ -174,7 +316,7 @@ class MiniMLModel(ABC):
         for p in self._params:
             p.param.bind(i0, self)
             i0 += p.param.size
-            
+
     def unbind(self) -> None:
         """Unbind the model parameters from the buffer."""
         if not self.bound:
@@ -384,7 +526,7 @@ class MiniMLModel(ABC):
         # Update result with the full buffer and recompute loss if not available
         if result.objective_value is None:
             result.objective_value = float(_targ_fun(result.x_opt))
-        
+
         # Return result with updated x_opt pointing to full buffer
         return MiniMLOptimResult(
             x_opt=self._buffer,
@@ -419,18 +561,15 @@ class MiniMLModel(ABC):
                 "kwargs": self._init_kwargs,
             }
         ]
-        
+
         save_args = {
             "buffer": self._buffer,
             "metadata": [metadata],
         }
         if not state_only:
-            save_args["init"] = init            
-        
-        np.savez_compressed(
-            filename,
-            **save_args
-        )
+            save_args["init"] = init
+
+        np.savez_compressed(filename, **save_args)
 
     @classmethod
     def load(cls: Type[T], filename: str | Path) -> T:
@@ -459,7 +598,7 @@ class MiniMLModel(ABC):
             raise MiniMLError(
                 f"Failed to load model using full state. Consider using manual initialization and load_state(). Original error:\n{e}"
             )
-    
+
     def load_state(self, filename: str | Path) -> None:
         """Load only the model parameters from a file
         created with state_only=True in save().
