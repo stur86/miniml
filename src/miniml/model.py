@@ -1,14 +1,14 @@
 import time
-import numpy as np
+import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable, Type, TypeVar, TypeAlias, Union
+from typing import Any, Generic, Protocol, runtime_checkable, Type, TypeVar, TypeAlias, Union
 from dataclasses import dataclass
 
 import jax
-import warnings
 from jax import Array as JXArray
 import jax.numpy as jnp
+import numpy as np
 from numpy.typing import DTypeLike, NDArray
 from miniml.param import MiniMLError, _supported_types, MiniMLParamRef
 from miniml.loss import LossFunction
@@ -47,11 +47,28 @@ MiniMLArgsType: TypeAlias = Union[
     type[None],
     bytes,
     _MiniMLFunctionRef,
+    "MiniMLModelPlan",
     list["MiniMLArgsType"],
     dict[str, "MiniMLArgsType"],
     set["MiniMLArgsType"],
     tuple["MiniMLArgsType", ...]
 ]
+
+@dataclass
+class MiniMLModelPlan(Generic[T]):
+    """A plan to construct a MiniMLModel with given arguments."""
+    class_type: Type[T]
+    args: list[Any]
+    kwargs: dict[str, Any]
+    
+    def construct(self) -> T:
+        """Construct the MiniMLModel instance.
+
+        Returns:
+            T: An instance of the MiniMLModel.
+        """
+        return self.class_type(*self.args, **self.kwargs)  # type: ignore
+
 
 
 class MiniMLConfig:
@@ -62,7 +79,7 @@ class MiniMLConfig:
     _registry: CallablesRegistry
     
     def _validate_args(self, obj: Any) -> MiniMLArgsType:
-        if isinstance(obj, (int, float, str, bool, type(None), bytes)):
+        if isinstance(obj, (int, float, str, bool, type(None), bytes, MiniMLModelPlan)):
             return obj # type: ignore
         elif hasattr(obj, "__call__"):
             # Is it in the registry?
@@ -151,7 +168,7 @@ class MiniMLConfig:
             dict[str, MiniMLArgsType]: The named arguments.
         """
         return self._kwargs
-
+    
 class MiniMLModel(ABC):
     """MiniML Model
 
@@ -184,7 +201,8 @@ class MiniMLModel(ABC):
             warnings.warn(f"""Could not build MiniMLConfig for {cls.__name__}: {e}.
 The model may not be properly serializable. You should use save(state_only=True) and load_state() instead.
 
-Consider overriding the get_config() class method to provide custom behavior if needed.""")
+Consider overriding the _get_config() class method  or the _get_callables_registry() class method
+to provide custom behavior if needed.""")
         
         return instance
 
@@ -687,6 +705,23 @@ Consider overriding the get_config() class method to provide custom behavior if 
             clone_model.bind()
             clone_model.set_buffer(self.get_buffer(copy=True))
         return clone_model
+    
+    @classmethod
+    def plan(cls: Type[T], *args, **kwargs) -> MiniMLModelPlan[T]:
+        """Create a MiniMLPlan to construct the model with the given arguments.
+
+        Args:
+            *args: Positional arguments for the constructor.
+            **kwargs: Named arguments for the constructor.
+
+        Returns:
+            MiniMLPlan[T]: A plan to construct the model.
+        """
+        return MiniMLModelPlan(
+            class_type=cls,
+            args=list(args),
+            kwargs=kwargs,
+        )
 
     def get_buffer(self, copy: bool = True) -> JXArray:
         if copy:

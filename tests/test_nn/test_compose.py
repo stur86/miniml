@@ -23,8 +23,8 @@ def test_identity():
 
 def test_stack():
     # Create two linear models in sequence
-    l1 = Linear(n_in=2, n_out=2)
-    l2 = Linear(n_in=2, n_out=2)
+    l1 = Linear.plan(n_in=2, n_out=2)
+    l2 = Linear.plan(n_in=2, n_out=2)
 
     m1 = np.ones((2, 2)) - np.eye(2)
     b1 = np.array([1, 0])
@@ -45,8 +45,8 @@ def test_stack():
 
 def test_stack_save_and_load(tmp_path: Path):
     # Create a stack model
-    l1 = Linear(n_in=2, n_out=2)
-    l2 = Linear(n_in=2, n_out=2)
+    l1 = Linear.plan(n_in=2, n_out=2)
+    l2 = Linear.plan(n_in=2, n_out=2)
 
     stack = Stack([l1, l2])
     stack.bind()
@@ -58,7 +58,7 @@ def test_stack_save_and_load(tmp_path: Path):
     assert model_path.exists()
 
     # Load the model
-    loaded_stack = Stack([Linear(n_in=2, n_out=2), Linear(n_in=2, n_out=2)])
+    loaded_stack = Stack([Linear.plan(n_in=2, n_out=2), Linear.plan(n_in=2, n_out=2)])
     loaded_stack.load_state(model_path)
 
     # Verify that the loaded model produces the same output
@@ -69,8 +69,8 @@ def test_stack_save_and_load(tmp_path: Path):
     assert jnp.array_equal(out_data_original, out_data_loaded)
 
 def test_parallel_sum():
-    model1 = Identity()
-    model2 = Identity()
+    model1 = Identity.plan()
+    model2 = Identity.plan()
     parallel = Parallel([model1, model2], mode="sum")
     parallel.bind()
 
@@ -81,8 +81,8 @@ def test_parallel_sum():
 
 
 def test_parallel_concat():
-    model1 = Identity()
-    model2 = Identity()
+    model1 = Identity.plan()
+    model2 = Identity.plan()
     parallel = Parallel([model1, model2], mode="concat", concat_axis=1)
     parallel.bind()
 

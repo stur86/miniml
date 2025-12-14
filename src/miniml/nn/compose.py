@@ -1,7 +1,7 @@
 from jax import Array
 import jax.numpy as jnp
 from typing import Literal
-from miniml.model import MiniMLModel, MiniMLModelList
+from miniml.model import MiniMLModel, MiniMLModelPlan, MiniMLModelList
 from miniml.loss import LossFunction
 
 
@@ -43,12 +43,13 @@ class Stack(MiniMLModel):
     """A MiniML model that stacks multiple MiniML models sequentially."""
 
     def __init__(
-        self, models: list[MiniMLModel], loss: LossFunction | None = None
+        self, models: list[MiniMLModelPlan], loss: LossFunction | None = None
     ) -> None:
         """Initialize the Stack model.
 
         Args:
-            models (list[MiniMLModel]): The models to stack.
+            models (list[MiniMLModelPlan]): Plans for the models to stack.
+                These will be instantiated when the Stack model is built.
             loss (LossFunction, optional): The loss function to use. Defaults to None.
 
         Raises:
@@ -56,7 +57,7 @@ class Stack(MiniMLModel):
         """
         if len(models) == 0:
             raise ValueError("Stack must contain at least one model")
-        self._model_list = MiniMLModelList(models)
+        self._model_list = MiniMLModelList([plan.construct() for plan in models])
         super().__init__(loss=loss)
 
     def _predict_kernel(self, X: Array, buffer: Array) -> Array:
@@ -71,7 +72,7 @@ class Parallel(MiniMLModel):
 
     def __init__(
         self,
-        models: list[MiniMLModel],
+        models: list[MiniMLModelPlan],
         mode: Literal["sum", "concat"],
         concat_axis: int = -1,
         loss: LossFunction | None = None,
@@ -79,7 +80,8 @@ class Parallel(MiniMLModel):
         """Initialize the Parallel model.
 
         Args:
-            models (list[MiniMLModel]): The models to apply in parallel.
+            models (list[MiniMLModelPlan]): Plans for the models to apply in parallel.
+                These will be instantiated when the Parallel model is built.
             mode (Literal["sum", "concat"]): The mode of combining outputs.
             concat_axis (int, optional): The axis to concatenate along if mode is "concat". Defaults to -1.
             loss (LossFunction | None, optional): The loss function to use. Defaults to None.
@@ -90,7 +92,7 @@ class Parallel(MiniMLModel):
         """
         if len(models) == 0:
             raise ValueError("Parallel must contain at least one model")
-        self._model_list = MiniMLModelList(models)
+        self._model_list = MiniMLModelList([plan.construct() for plan in models])
         self._concat_axis = concat_axis
         try:
             self._predict_func = getattr(self, f"_predictf_{mode}")

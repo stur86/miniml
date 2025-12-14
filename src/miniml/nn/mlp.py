@@ -1,5 +1,5 @@
 from jax import Array as JXArray
-from miniml.model import MiniMLModel
+from miniml.model import MiniMLModel, MiniMLModelPlan
 from miniml.loss import (
     RegLossFunction,
     LNormRegularization,
@@ -40,14 +40,14 @@ class MLP(MiniMLModel):
         if len(layer_sizes) < 2:
             raise MiniMLError("MLP must have at least two layers (input and output)")
 
-        layers: list[MiniMLModel] = []
+        layers: list[MiniMLModelPlan] = []
         self._n = len(layer_sizes) - 1
         for i in range(self._n):
             in_size, out_size = layer_sizes[i], layer_sizes[i + 1]
             if in_size <= 0 or out_size <= 0:
                 raise MiniMLError("Layer sizes must be positive integers")
             layers.append(
-                Linear(
+                Linear.plan(
                     in_size,
                     out_size,
                     reg_loss=reg_loss,
@@ -56,7 +56,7 @@ class MLP(MiniMLModel):
                 )
             )
             if i < self._n - 1:
-                layers.append(Activation(activation))
+                layers.append(Activation.plan(activation))
 
         self._layer_stack = Stack(layers)
 

@@ -26,6 +26,7 @@ def test_mlp_invalid_layer_sizes():
         MLP([0, 2])
 
 
+@pytest.mark.filterwarnings("ignore::UserWarning")
 def test_mlp_custom_activation():
     def custom_act(x):
         return x * 2
