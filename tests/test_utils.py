@@ -1,4 +1,4 @@
-from miniml.utils import ImmutableBiDict
+from miniml.utils import ImmutableBiDict, CallablesRegistry
 
 
 def test_immut_bidict():
@@ -17,3 +17,14 @@ def test_immut_bidict():
 
     assert sorted(ibidict.keys()) == ["one", "two"]
     assert sorted(ibidict.values()) == [1, 2]
+
+def test_callables_registry():
+    # Let's use our own module
+    import miniml.utils
+    
+    registry = CallablesRegistry([miniml.utils])
+    
+    # Check that some known functions are registered
+    assert "miniml.utils.ImmutableBiDict" in registry.dict.keys()
+    assert registry.dict.get("miniml.utils.ImmutableBiDict") == miniml.utils.ImmutableBiDict
+    assert registry.dict.get_inverse(miniml.utils.CallablesRegistry) == "miniml.utils.CallablesRegistry"
