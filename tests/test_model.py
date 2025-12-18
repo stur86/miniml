@@ -207,6 +207,22 @@ def test_plan_model():
     assert isinstance(m2, CustomModel)
     assert m2.p.shape == (4,3)
     
+def test_non_picklable_init_args():
+    # Try passing a lambda function as an argument
+    class CustomModel(MiniMLModel):
+        def __init__(self, func):
+            self.func = func
+            self.p = MiniMLParam((1,))
+            super().__init__()
+
+        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+            return X + self.p(buffer)
+    
+    m = CustomModel(func=lambda x: x)
+    # Now try cloning, this should throw an error
+    with pytest.raises(MiniMLError, match="could not be pickled; can not clone"):
+        m.clone()
+    
 
 def test_squared_error_loss():
     y_true = jnp.array([1.0, 2.0, 3.0])

@@ -88,7 +88,8 @@ class MiniMLModel(ABC):
                 "args": args,
                 "kwargs": kwargs,
             })
-        except pickle.PicklingError:
+        except Exception:
+            # Any reason why pickling fails, just set to None
             instance._init_args = None
         return instance
 
