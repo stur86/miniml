@@ -1,7 +1,7 @@
 import numpy as np
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable, Type, TypeVar
+from typing import Any, Protocol, runtime_checkable, Type, TypeVar, Generic
 import time
 import jax
 from jax import Array as JXArray
@@ -30,6 +30,32 @@ class ParametrizedObject(Protocol):
 
 T = TypeVar("T", bound="MiniMLModel")
 
+class MiniMLModelPlan(Generic[T]):
+    """A plan to create a MiniMLModel later."""
+
+    _model_cls: Type[T]
+    _args: list[Any]
+    _kwargs: dict[str, Any]
+
+    def __init__(self, model_cls: Type[T], *args: Any, **kwargs: Any) -> None:
+        """Construct a MiniMLModelPlan.
+
+        Args:
+            model_cls (Type[T]): The class of the model to create.
+            *args: Positional arguments for the model constructor.
+            **kwargs: Keyword arguments for the model constructor.
+        """
+        self._model_cls = model_cls
+        self._args = list(args)
+        self._kwargs = dict(kwargs)
+
+    def create(self) -> T:
+        """Create the MiniMLModel instance.
+
+        Returns:
+            T: The created MiniMLModel instance.
+        """
+        return self._model_cls(*self._args, **self._kwargs)  # type: ignore
 
 class MiniMLModel(ABC):
     """MiniML Model
@@ -459,6 +485,19 @@ class MiniMLModel(ABC):
             raise MiniMLError(
                 f"Failed to load model using full state. Consider using manual initialization and load_state(). Original error:\n{e}"
             )
+    
+    @classmethod
+    def plan(cls: Type[T], *args: Any, **kwargs: Any) -> MiniMLModelPlan[T]:
+        """Create a MiniMLModelPlan to create the model later.
+        
+        Args:
+            *args: Positional arguments for the model constructor.
+            **kwargs: Keyword arguments for the model constructor.
+        Returns:
+            MiniMLModelPlan[T]: A plan to create the model later.
+        """
+        
+        return MiniMLModelPlan(cls, *args, **kwargs)
     
     def load_state(self, filename: str | Path) -> None:
         """Load only the model parameters from a file

@@ -190,6 +190,23 @@ def test_clone_model():
     assert not hasattr(m3, "_buffer")
     assert m3.p.shape == m1.p.shape
 
+def test_plan_model():
+    class CustomModel(MiniMLModel):
+        def __init__(self, n: int, m: int = 2):
+            self.p = MiniMLParam((n,m))
+            super().__init__()
+
+        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+            return X + self.p(buffer)
+
+    plan = CustomModel.plan(4, m=3)
+    assert plan._model_cls is CustomModel
+    assert plan._args == [4]
+    assert plan._kwargs == {"m": 3}
+    m2 = plan.create()
+    assert isinstance(m2, CustomModel)
+    assert m2.p.shape == (4,3)
+    
 
 def test_squared_error_loss():
     y_true = jnp.array([1.0, 2.0, 3.0])
