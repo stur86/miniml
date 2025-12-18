@@ -1,4 +1,5 @@
 import numpy as np
+import pickle
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable, Type, TypeVar, Generic
@@ -77,13 +78,18 @@ class MiniMLModel(ABC):
     _loss_f: LossFunction | None = None
 
     # Stored call arguments
-    _init_args: list[Any]
-    _init_kwargs: dict[str, Any]
+    _init_args: bytes | None
 
     def __new__(cls: Type[T], *args, **kwargs) -> T:
         instance = super().__new__(cls)  # type: ignore
-        instance._init_args = list(args)
-        instance._init_kwargs = dict(kwargs)
+        # Store init arguments for saving/loading pickled
+        try:
+            instance._init_args = pickle.dumps({
+                "args": args,
+                "kwargs": kwargs,
+            })
+        except pickle.PicklingError:
+            instance._init_args = None
         return instance
 
     def __init__(self, loss: LossFunction | None = None) -> None:
@@ -439,19 +445,17 @@ class MiniMLModel(ABC):
                 "Model parameters have not been bound to buffers; can not save"
             )
         metadata = {"model_name": self.__class__.__name__}
-        init = [
-            {
-                "args": self._init_args,
-                "kwargs": self._init_kwargs,
-            }
-        ]
         
         save_args = {
             "buffer": self._buffer,
             "metadata": [metadata],
         }
         if not state_only:
-            save_args["init"] = init            
+            if self._init_args is None:
+                raise MiniMLError(
+                    "Model initialization arguments could not be pickled; can not save full model. Consider using state_only=True."
+                )
+            save_args["init"] = self._init_args
         
         np.savez_compressed(
             filename,
@@ -469,7 +473,7 @@ class MiniMLModel(ABC):
         mdata = load_dict["metadata"][0]
         assert mdata["model_name"] == cls.__name__, "Model is not same class"
 
-        init = load_dict["init"][0]
+        init = pickle.loads(load_dict["init"])
         args = init["args"]
         kwargs = init["kwargs"]
 
@@ -524,7 +528,12 @@ class MiniMLModel(ABC):
         Returns:
             Self: A clone of the model.
         """
-        clone_model = self.__class__(*self._init_args, **self._init_kwargs)  # type: ignore
+        if self._init_args is None:
+            raise MiniMLError(
+                "Model initialization arguments could not be pickled; can not clone. Consider manual initialization."
+            )
+        init = pickle.loads(self._init_args)
+        clone_model = self.__class__(*init["args"], **init["kwargs"])  # type: ignore
         if with_params:
             clone_model.bind()
             clone_model.set_buffer(self.get_buffer(copy=True))
