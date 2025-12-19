@@ -54,7 +54,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: dvc-data
-        path: .
+        path: tests/test_nn/data
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v3
       with:
