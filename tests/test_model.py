@@ -72,7 +72,37 @@ def test_model_basic(tmp_path: Path):
 
     for k in param_vals:
         assert np.array_equal(param_vals[k], reloaded_vals[k])
+        
+    # Try saving only state
+    save_state_path = tmp_path / "model_state.npz"
+    m_loaded.save(save_state_path, state_only=True)
+    # Create a new model with the same initialization arguments
+    m2 = LinearModel()
+    m2.load_state(save_state_path)
+    state_loaded_vals = m2.get_params()
+    for k in param_vals:
+        assert np.array_equal(param_vals[k], state_loaded_vals[k])
 
+def test_bind_and_unbind():
+    class M(MiniMLModel):
+        def __init__(self):
+            self.p = MiniMLParam((2,))
+            super().__init__()
+
+        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+            return super()._predict_kernel(X, buffer)
+
+    m = M()
+    with pytest.raises(MiniMLError, match="Model parameters are not bound to a buffer"):
+        m.unbind()
+
+    m.bind()
+    assert m.bound
+    assert m.p.bound
+
+    m.unbind()
+    assert not m.bound
+    assert not m.p.bound
 
 def test_dtype_mismatch():
     class ModelA(MiniMLModel):
@@ -160,6 +190,39 @@ def test_clone_model():
     assert not hasattr(m3, "_buffer")
     assert m3.p.shape == m1.p.shape
 
+def test_plan_model():
+    class CustomModel(MiniMLModel):
+        def __init__(self, n: int, m: int = 2):
+            self.p = MiniMLParam((n,m))
+            super().__init__()
+
+        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+            return X + self.p(buffer)
+
+    plan = CustomModel.plan(4, m=3)
+    assert plan._model_cls is CustomModel
+    assert plan._args == [4]
+    assert plan._kwargs == {"m": 3}
+    m2 = plan.create()
+    assert isinstance(m2, CustomModel)
+    assert m2.p.shape == (4,3)
+    
+def test_non_picklable_init_args():
+    # Try passing a lambda function as an argument
+    class CustomModel(MiniMLModel):
+        def __init__(self, func):
+            self.func = func
+            self.p = MiniMLParam((1,))
+            super().__init__()
+
+        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+            return X + self.p(buffer)
+    
+    m = CustomModel(func=lambda x: x)
+    # Now try cloning, this should throw an error
+    with pytest.raises(MiniMLError, match="could not be pickled; can not clone"):
+        m.clone()
+    
 
 def test_squared_error_loss():
     y_true = jnp.array([1.0, 2.0, 3.0])
@@ -240,7 +303,7 @@ def test_linear_model_fit_with_l2_reg(method: str):
     optimizer = ScipyOptimizer(method=method)
     res = model.fit(X, y, reg_lambda=reg_lambda, optimizer=optimizer)
     assert res.success
-    assert jnp.isclose(res.objective_value, model.total_loss(y, model.predict(X), reg_lambda))
+    assert jnp.isclose(res.objective_value, model.total_loss(y, model.predict(X), reg_lambda)) # type: ignore
 
     a_fit, b_fit = model.a()[0], model.b()[0]
     # Analytical ridge regression solution for a: a = Sxy / (Sxx + lambda)
