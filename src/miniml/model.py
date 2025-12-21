@@ -313,6 +313,19 @@ class MiniMLModel(ABC):
     @abstractmethod
     def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
         pass
+    
+    def _fit_predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+        """Prediction kernel used during fitting. By default, it calls _predict_kernel.
+        Can be overridden in subclasses to provide different behavior during fitting.
+        
+        Args:
+            X (JXArray): Input data.
+            buffer (JXArray): Parameter buffer.
+            
+        Returns:
+            JXArray: Predicted output.
+        """
+        return self._predict_kernel(X, buffer=buffer)
 
     def predict(self, X: JXArray, **predict_kwargs: dict[str, Any]) -> JXArray:
         """Predict the output for the given input data.
@@ -405,7 +418,7 @@ class MiniMLModel(ABC):
         def _targ_fun(p: JXArray) -> JXArray:
             nonlocal buffer
             buf_in = buffer.at[p_mask].set(p)
-            y_pred = self._predict_kernel(X, buffer=buf_in, **predict_kwargs)
+            y_pred = self._fit_predict_kernel(X, buffer=buf_in, **predict_kwargs)
             loss = self.total_loss(y, y_pred, reg_lambda, buf_in)
             return loss
 
