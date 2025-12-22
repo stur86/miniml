@@ -1,11 +1,12 @@
 [project]
 name = "miniml-jax"
-version = "0.5.0"
+version = "0.7.0"
 description = "MiniML - a minimalistic ML framework"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "jax>=0.7.1",
+    "numpy>=2.3.4",
     "scipy>=1.16.1",
     "typing-extensions>=4.15.0 ; python_full_version < '3.11'",
 ]

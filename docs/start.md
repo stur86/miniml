@@ -91,6 +91,9 @@ def _predict_kernel(self, X, buffer):
 `X` should be a Jax array, and the parameters can be accessed by calling them with the buffer as an argument; they will also be Jax arrays.
 If any parameter is not called this way it will not use the correct values during fitting. Write this function sticking to Jax philosophy for differentiability (use Jax functions and functional constructs).
 
+!!! note
+    Sometimes, we may want the logic used for prediction at inference time to be different from the logic used at training time (for example, for a transformer it's useful to compute the next token for an entire sequence when training, but during inference we only need the immediate next token). In this case, it's possible to override the `_fit_predict_kernel` method instead. By default this method returns the output of `_predict_kernel` and it has the same exact interface, but it can be used to introduce distinct behaviour instead.
+
 #### Example data
 
 ```py

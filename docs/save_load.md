@@ -12,6 +12,29 @@ as the saved model, but the construction parameters are saved in the file togeth
 ```py
 model = MyModel.load("model_file_name.npz")
 ```
+!!! warning
+
+    Saving and loading relies on pickling the construction arguments of the model. This won't store any successive modifications made to the model, other than changes to the weights. In addition, this can fail for certain types
+    of arguments (e.g. lambdas) and it is generally considered unsafe due to the potential to execute code during
+    the unpickling operation. Only use it to load models from trusted sources. For a more robust and safe mechanism,
+    consider using the `state_only` option instead.
+
+## State-only saving
+
+It is possible to save only the state of the model to a file:
+
+```py
+model.save("model_file_name.npz", state_only=True)
+```
+
+This will store the weights but not the initialization arguments of the model. It requires you to prepare the model in its bindable state via scripting, but once that's done, you can simply use:
+
+```py
+model.load_state("model_file_name.npz")
+```
+
+to restore the entire state as is.
+
 
 ## Storing parameters as a dictionary
 

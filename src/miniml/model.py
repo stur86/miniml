@@ -1,7 +1,8 @@
 import numpy as np
+import pickle
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable, Type, TypeVar
+from typing import Any, Protocol, runtime_checkable, Type, TypeVar, Generic
 import time
 import jax
 from jax import Array as JXArray
@@ -30,6 +31,32 @@ class ParametrizedObject(Protocol):
 
 T = TypeVar("T", bound="MiniMLModel")
 
+class MiniMLModelPlan(Generic[T]):
+    """A plan to create a MiniMLModel later."""
+
+    _model_cls: Type[T]
+    _args: list[Any]
+    _kwargs: dict[str, Any]
+
+    def __init__(self, model_cls: Type[T], *args: Any, **kwargs: Any) -> None:
+        """Construct a MiniMLModelPlan.
+
+        Args:
+            model_cls (Type[T]): The class of the model to create.
+            *args: Positional arguments for the model constructor.
+            **kwargs: Keyword arguments for the model constructor.
+        """
+        self._model_cls = model_cls
+        self._args = list(args)
+        self._kwargs = dict(kwargs)
+
+    def create(self) -> T:
+        """Create the MiniMLModel instance.
+
+        Returns:
+            T: The created MiniMLModel instance.
+        """
+        return self._model_cls(*self._args, **self._kwargs)  # type: ignore
 
 class MiniMLModel(ABC):
     """MiniML Model
@@ -51,13 +78,19 @@ class MiniMLModel(ABC):
     _loss_f: LossFunction | None = None
 
     # Stored call arguments
-    _init_args: list[Any]
-    _init_kwargs: dict[str, Any]
+    _init_args: bytes | None
 
     def __new__(cls: Type[T], *args, **kwargs) -> T:
         instance = super().__new__(cls)  # type: ignore
-        instance._init_args = list(args)
-        instance._init_kwargs = dict(kwargs)
+        # Store init arguments for saving/loading pickled
+        try:
+            instance._init_args = pickle.dumps({
+                "args": args,
+                "kwargs": kwargs,
+            })
+        except Exception:
+            # Any reason why pickling fails, just set to None
+            instance._init_args = None
         return instance
 
     def __init__(self, loss: LossFunction | None = None) -> None:
@@ -174,6 +207,15 @@ class MiniMLModel(ABC):
         for p in self._params:
             p.param.bind(i0, self)
             i0 += p.param.size
+            
+    def unbind(self) -> None:
+        """Unbind the model parameters from the buffer."""
+        if not self.bound:
+            raise MiniMLError("Model parameters are not bound to a buffer")
+
+        for p in self._params:
+            p.param.unbind()
+        del self._buffer
 
     def randomize(self, seed: int | None = None) -> None:
         """Randomize the parameters of the model using JAX random generators.
@@ -271,6 +313,19 @@ class MiniMLModel(ABC):
     @abstractmethod
     def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
         pass
+    
+    def _fit_predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+        """Prediction kernel used during fitting. By default, it calls _predict_kernel.
+        Can be overridden in subclasses to provide different behavior during fitting.
+        
+        Args:
+            X (JXArray): Input data.
+            buffer (JXArray): Parameter buffer.
+            
+        Returns:
+            JXArray: Predicted output.
+        """
+        return self._predict_kernel(X, buffer=buffer)
 
     def predict(self, X: JXArray, **predict_kwargs: dict[str, Any]) -> JXArray:
         """Predict the output for the given input data.
@@ -363,7 +418,7 @@ class MiniMLModel(ABC):
         def _targ_fun(p: JXArray) -> JXArray:
             nonlocal buffer
             buf_in = buffer.at[p_mask].set(p)
-            y_pred = self._predict_kernel(X, buffer=buf_in, **predict_kwargs)
+            y_pred = self._fit_predict_kernel(X, buffer=buf_in, **predict_kwargs)
             loss = self.total_loss(y, y_pred, reg_lambda, buf_in)
             return loss
 
@@ -388,29 +443,37 @@ class MiniMLModel(ABC):
             n_hessian_evaluations=result.n_hessian_evaluations,
         )
 
-    def save(self, filename: str | Path) -> None:
+    def save(self, filename: str | Path, state_only: bool = False) -> None:
         """Save the model parameters to a file.
 
         Args:
             filename (str | Path): The file name.
+            state_only (bool, optional): If True, do not save initialization arguments.
+                This means only load_state() can be used to restore the model, and
+                the user must guarantee that the model structure is the same.
+                Helps in cases in which the regular save/load mechanism fails.
+                Defaults to False.
         """
         if not self.bound:
             raise MiniMLError(
                 "Model parameters have not been bound to buffers; can not save"
             )
         metadata = {"model_name": self.__class__.__name__}
-        init = [
-            {
-                "args": self._init_args,
-                "kwargs": self._init_kwargs,
-            }
-        ]
-
+        
+        save_args = {
+            "buffer": self._buffer,
+            "metadata": [metadata],
+        }
+        if not state_only:
+            if self._init_args is None:
+                raise MiniMLError(
+                    "Model initialization arguments could not be pickled; can not save full model. Consider using state_only=True."
+                )
+            save_args["init"] = self._init_args
+        
         np.savez_compressed(
             filename,
-            buffer=self._buffer,
-            init=init,  # type: ignore
-            metadata=[metadata],  # type: ignore
+            **save_args
         )
 
     @classmethod
@@ -424,14 +487,50 @@ class MiniMLModel(ABC):
         mdata = load_dict["metadata"][0]
         assert mdata["model_name"] == cls.__name__, "Model is not same class"
 
-        init = load_dict["init"][0]
+        init = pickle.loads(load_dict["init"])
         args = init["args"]
         kwargs = init["kwargs"]
 
-        model = cls(*args, **kwargs)  # type: ignore
-        model.bind()
-        model.set_buffer(load_dict["buffer"])
-        return model
+        try:
+            model = cls(*args, **kwargs)  # type: ignore
+            model.bind()
+            model.set_buffer(load_dict["buffer"])
+            return model
+        except Exception as e:
+            # When this happens, it's often because some of the arguments
+            # are not well-serialized by numpy, or include stateful models.
+            # In this case, we should suggest using load_state() instead.
+            raise MiniMLError(
+                f"Failed to load model using full state. Consider using manual initialization and load_state(). Original error:\n{e}"
+            )
+    
+    @classmethod
+    def plan(cls: Type[T], *args: Any, **kwargs: Any) -> MiniMLModelPlan[T]:
+        """Create a MiniMLModelPlan to create the model later.
+        
+        Args:
+            *args: Positional arguments for the model constructor.
+            **kwargs: Keyword arguments for the model constructor.
+        Returns:
+            MiniMLModelPlan[T]: A plan to create the model later.
+        """
+        
+        return MiniMLModelPlan(cls, *args, **kwargs)
+    
+    def load_state(self, filename: str | Path) -> None:
+        """Load only the model parameters from a file
+        created with state_only=True in save().
+
+        Args:
+            filename (str | Path): The file name.
+        """
+        load_dict = np.load(filename, allow_pickle=True)
+        mdata = load_dict["metadata"][0]
+        assert mdata["model_name"] == self.__class__.__name__, "Model is not same class"
+
+        if not self.bound:
+            self.bind()
+        self.set_buffer(load_dict["buffer"])
 
     def clone(self, with_params: bool = False) -> Self:
         """Create a clone of the model with the same parameters.
@@ -443,7 +542,12 @@ class MiniMLModel(ABC):
         Returns:
             Self: A clone of the model.
         """
-        clone_model = self.__class__(*self._init_args, **self._init_kwargs)  # type: ignore
+        if self._init_args is None:
+            raise MiniMLError(
+                "Model initialization arguments could not be pickled; can not clone. Consider manual initialization."
+            )
+        init = pickle.loads(self._init_args)
+        clone_model = self.__class__(*init["args"], **init["kwargs"])  # type: ignore
         if with_params:
             clone_model.bind()
             clone_model.set_buffer(self.get_buffer(copy=True))
