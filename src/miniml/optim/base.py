@@ -5,12 +5,13 @@ from typing import Callable
 from enum import Enum
 from dataclasses import dataclass
 
-ObjectiveFunction = Callable[[JxArray], JxArray]
-JacobianFunction = Callable[[JxArray], JxArray]
-ObjJacFunction = Callable[[JxArray], tuple[JxArray, JxArray]]
-HessianProductFunction = Callable[[JxArray, JxArray], JxArray]
-HessianFunction = Callable[[JxArray], JxArray]
+OptionalRngKey = JxArray | None
 
+ObjectiveFunction = Callable[[JxArray, OptionalRngKey], JxArray]
+JacobianFunction = Callable[[JxArray, OptionalRngKey], JxArray]
+ObjJacFunction = Callable[[JxArray, OptionalRngKey], tuple[JxArray, JxArray]]
+HessianProductFunction = Callable[[JxArray, JxArray, OptionalRngKey], JxArray]
+HessianFunction = Callable[[JxArray, OptionalRngKey], JxArray]
 
 class DerivRequire(Enum):
     """Enumeration of derivative requirements for the optimizer.
@@ -121,8 +122,8 @@ class OptimizationMethods:
 
                 _jac = jac
 
-                def jac_dir(x, p):
-                    return _jac(x) @ p
+                def jac_dir(x, p, *args, **kwargs):
+                    return _jac(x, *args, **kwargs) @ p
 
                 hessp = jax.grad(jac_dir, argnums=0)
                 hessp = jax.jit(hessp, inline=True)

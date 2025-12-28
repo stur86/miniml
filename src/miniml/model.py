@@ -314,13 +314,15 @@ class MiniMLModel(ABC):
     def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
         pass
     
-    def _fit_predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+    def _fit_predict_kernel(self, X: JXArray, buffer: JXArray, rng_key: JXArray | None = None) -> JXArray:
         """Prediction kernel used during fitting. By default, it calls _predict_kernel.
-        Can be overridden in subclasses to provide different behavior during fitting.
+        Can be overridden in subclasses to provide different behavior during fitting,
+        or make use of the rng_key for stochastic models (e.g. dropout).
         
         Args:
             X (JXArray): Input data.
             buffer (JXArray): Parameter buffer.
+            rng_key (JXArray): JAX random key for stochastic models. Ignored by default.
             
         Returns:
             JXArray: Predicted output.
@@ -415,10 +417,10 @@ class MiniMLModel(ABC):
 
         buffer = self._buffer
 
-        def _targ_fun(p: JXArray) -> JXArray:
+        def _targ_fun(p: JXArray, rng_key: JXArray | None) -> JXArray:
             nonlocal buffer
             buf_in = buffer.at[p_mask].set(p)
-            y_pred = self._fit_predict_kernel(X, buffer=buf_in, **predict_kwargs)
+            y_pred = self._fit_predict_kernel(X, buffer=buf_in, rng_key=rng_key, **predict_kwargs)
             loss = self.total_loss(y, y_pred, reg_lambda, buf_in)
             return loss
 
@@ -426,10 +428,6 @@ class MiniMLModel(ABC):
 
         result = optimizer(_targ_fun, p0)
         self._buffer = self._buffer.at[p_mask].set(result.x_opt)
-
-        # Update result with the full buffer and recompute loss if not available
-        if result.objective_value is None:
-            result.objective_value = float(_targ_fun(result.x_opt))
         
         # Return result with updated x_opt pointing to full buffer
         return MiniMLOptimResult(

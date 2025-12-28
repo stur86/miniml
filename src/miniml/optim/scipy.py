@@ -97,6 +97,7 @@ class ScipyOptimizer(MiniMLOptimizer):
             x0=x0,
             method=self._method,
             jac=jac,
+            args=(None,),
             hessp=(
                 methods.hessp
                 if self._config.deriv_require == DerivRequire.HESSIAN_PRODUCT

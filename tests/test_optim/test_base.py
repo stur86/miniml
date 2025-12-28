@@ -60,7 +60,7 @@ def test_miniml_optimizer_init(config: OptimizationMethods.Config) -> None:
             return MiniMLOptimResult(x_opt=x0, success=True, message="Test successful")
 
     # Create a dummy function
-    def dummy_objective(x: Array) -> Array:
+    def dummy_objective(x: Array, rng_key = None) -> Array:
         return (x**2).sum()
 
     optimizer = TestOptimizer(config)

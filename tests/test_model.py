@@ -6,6 +6,7 @@ from jax import Array as JXArray
 from miniml.param import MiniMLParam, MiniMLError
 from miniml.model import MiniMLModel, MiniMLModelList
 from miniml.loss import squared_error_loss, LNormRegularization
+from miniml.optim.adam import AdamOptimizer
 
 
 def test_model_basic(tmp_path: Path):
@@ -278,6 +279,32 @@ def test_linear_model_fit_no_reg(method: str):
     a_fit, b_fit = model.a()[0], model.b()[0]
     assert jnp.isclose(a_fit, 2.0, atol=1e-2)
     assert jnp.isclose(b_fit, 1.0, atol=1e-2)
+    
+def test_linear_model_fit_with_adam():
+    # Fit y = a*x + b using Adam optimizer
+    class LinearModel(MiniMLModel):
+        def __init__(self):
+            self.a = MiniMLParam((1,))
+            self.b = MiniMLParam((1,))
+            super().__init__(loss=squared_error_loss)
+
+        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+            return self.a(buffer) * X + self.b(buffer)
+
+    # Generate data: y = 3x + 2
+    X = jnp.linspace(0, 10, 20)
+    y = 3 * X + 2
+    model = LinearModel()
+    model.bind()
+    model._buffer = jnp.array([0.0, 0.0], dtype=jnp.float32)  # init to zeros
+    
+    optimizer = AdamOptimizer(alpha=0.4, maxiter=5000, tol=1e-4)
+    res = model.fit(X, y, optimizer=optimizer)
+    assert res.success
+
+    a_fit, b_fit = model.a()[0], model.b()[0]
+    assert jnp.isclose(a_fit, 3.0, atol=1e-2)
+    assert jnp.isclose(b_fit, 2.0, atol=1e-2)
 
 
 @pytest.mark.parametrize("method", ["L-BFGS-B", "Nelder-Mead", "trust-krylov"])
