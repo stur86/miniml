@@ -1,3 +1,5 @@
+import jax
+import warnings
 from jax import Array as JxArray
 import jax.numpy as jnp
 from scipy.optimize import minimize
@@ -86,18 +88,24 @@ class ScipyOptimizer(MiniMLOptimizer):
         return self._all_methods
 
     def _minimize_kernel(
-        self, x0: JxArray, methods: OptimizationMethods
+        self, x0: JxArray, methods: OptimizationMethods, seed: int | None = None
     ) -> MiniMLOptimResult:
         jac = None
         if self._config.deriv_require.value >= DerivRequire.JACOBIAN.value:
             jac = methods.jac if not self._config.join_jac_and_value else True
+
+        prng_key: JxArray | None = None
+        if seed is not None:
+            prng_key = jax.random.PRNGKey(seed)
+            warnings.warn("ScipyOptimizer does not support modifying the random seed during optimization; the seed will be the same in all iterations."
+                          " If stochastic behavior is desired, consider using a different optimizer.", UserWarning)
 
         result = minimize(
             fun=methods.obj_and_jac if self._config.join_jac_and_value else methods.obj,
             x0=x0,
             method=self._method,
             jac=jac,
-            args=(None,),
+            args=(prng_key,),
             hessp=(
                 methods.hessp
                 if self._config.deriv_require == DerivRequire.HESSIAN_PRODUCT

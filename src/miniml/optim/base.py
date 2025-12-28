@@ -151,13 +151,15 @@ class MiniMLOptimizer(ABC):
 
     @abstractmethod
     def _minimize_kernel(
-        self, x0: JxArray, methods: OptimizationMethods
+        self, x0: JxArray, methods: OptimizationMethods, 
+        seed: int | None = None
     ) -> MiniMLOptimResult:
         """Execute the optimization kernel.
 
         Args:
             x0: Starting point for optimization.
             methods: Container with JIT-compiled optimization methods.
+            seed: Optional random seed for stochastic methods.
 
         Returns:
             MiniMLOptimResult: Result of the optimization.
@@ -165,16 +167,17 @@ class MiniMLOptimizer(ABC):
         pass
 
     def __call__(
-        self, objective: ObjectiveFunction, x0: JxArray
+        self, objective: ObjectiveFunction, x0: JxArray, seed: int | None = None
     ) -> MiniMLOptimResult:
         """Run the optimizer given the objective function and starting value.
 
         Args:
             objective: The objective function to optimize.
             x0: Starting point for optimization.
+            seed: Optional random seed for stochastic methods.
 
         Returns:
             MiniMLOptimResult: Result of the optimization.
         """
         methods = OptimizationMethods.from_objective(objective, self._config)
-        return self._minimize_kernel(x0, methods)
+        return self._minimize_kernel(x0, methods, seed=seed)

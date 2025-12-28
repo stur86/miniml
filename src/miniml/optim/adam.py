@@ -48,7 +48,8 @@ class AdamOptimizer(MiniMLOptimizer):
         self._maxiter = maxiter
 
     def _minimize_kernel(
-        self, x0: JxArray, methods: OptimizationMethods
+        self, x0: JxArray, methods: OptimizationMethods, 
+        seed: int | None = None
     ) -> MiniMLOptimResult:
         n = x0.shape[0]
         m = jnp.zeros_like(x0)
@@ -85,7 +86,12 @@ class AdamOptimizer(MiniMLOptimizer):
             return (jnp.concatenate([x, m, v, jnp.array([flag])], axis=0), rng_key)
 
         adam_step_jit = jax.jit(adam_step, inline=True)
-        state = (jnp.concatenate([x, m, v, jnp.array([0.0])], axis=0), None)
+        
+        prng_key: JxArray | None = None
+        if seed is not None:
+            prng_key = jax.random.PRNGKey(seed)
+        
+        state = (jnp.concatenate([x, m, v, jnp.array([0.0])], axis=0), prng_key)
 
         out_state, last_rng_key = jax.lax.fori_loop(1, self._maxiter + 1, adam_step_jit, state)
 
