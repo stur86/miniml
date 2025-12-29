@@ -1,4 +1,5 @@
 from jax import Array
+import jax
 import jax.numpy as jnp
 from typing import Literal
 from miniml.model import MiniMLModel, MiniMLModelList, PredictMode
@@ -82,10 +83,13 @@ class Stack(MiniMLModel):
         **predict_kwargs,
     ) -> Array:
         for model in self._model_list.contents:
+            rng_key, subkey = (
+                jax.random.split(rng_key) if rng_key is not None else (None, None)
+            )
             X = model._predict_kernel(
                 X,
                 buffer,
-                rng_key=rng_key,
+                rng_key=subkey,
                 mode=mode,
                 **predict_kwargs,
             )
@@ -125,6 +129,30 @@ class Parallel(MiniMLModel):
             raise ValueError(f"Invalid mode '{mode}'. Choose 'sum' or 'concat'.")
 
         super().__init__(loss=loss)
+        
+    def _iter_predictf(
+        self,
+        X: Array,
+        buffer: Array,
+        rng_key: Array | None,
+        mode: PredictMode,
+        **predict_kwargs,
+    ) -> list[Array]:
+        outputs = []
+        for model in self._model_list.contents:
+            rng_key, subkey = (
+                jax.random.split(rng_key) if rng_key is not None else (None, None)
+            )
+            outputs.append(
+                model._predict_kernel(
+                    X,
+                    buffer,
+                    rng_key=subkey,
+                    mode=mode,
+                    **predict_kwargs,
+                )
+            )
+        return outputs
 
     def _predictf_sum(
         self,
@@ -134,16 +162,13 @@ class Parallel(MiniMLModel):
         mode: PredictMode,
         **predict_kwargs,
     ) -> Array:
-        outputs = [
-            model._predict_kernel(
-                X,
-                buffer,
-                rng_key=rng_key,
-                mode=mode,
-                **predict_kwargs,
-            )
-            for model in self._model_list.contents
-        ]
+        outputs = self._iter_predictf(
+            X,
+            buffer,
+            rng_key=rng_key,
+            mode=mode,
+            **predict_kwargs,
+        )
         return jnp.sum(jnp.stack(outputs), axis=0)
 
     def _predictf_concat(
@@ -154,16 +179,13 @@ class Parallel(MiniMLModel):
         mode: PredictMode,
         **predict_kwargs,
     ) -> Array:
-        outputs = [
-            model._predict_kernel(
-                X,
-                buffer,
-                rng_key=rng_key,
-                mode=mode,
-                **predict_kwargs,
-            )
-            for model in self._model_list.contents
-        ]
+        outputs = self._iter_predictf(
+            X,
+            buffer,
+            rng_key=rng_key,
+            mode=mode,
+            **predict_kwargs,
+        )
         return jnp.concatenate(outputs, axis=self._concat_axis)
 
     def _predict_kernel(
