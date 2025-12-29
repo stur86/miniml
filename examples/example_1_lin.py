@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.16.0"
+__generated_with = "0.17.8"
 app = marimo.App(width="medium")
 
 
@@ -10,21 +10,22 @@ def _():
     import numpy as np
     import jax.numpy as jnp
     from miniml import MiniMLModel, MiniMLParam
+    from miniml.loss import squared_error_loss
     import seaborn as sns
-    return MiniMLModel, MiniMLParam, jnp, mo, np, sns
+    return MiniMLModel, MiniMLParam, jnp, mo, np, sns, squared_error_loss
 
 
 @app.cell
 def _(jnp, np):
     # Create data
     seed = 35
-    nl = 0.1
+    nl = 0.0
     rng = np.random.default_rng(seed)
     X = jnp.array(rng.uniform(size=(1000,2)))
     A = jnp.array(rng.normal(size=(2,1)))
     b = jnp.array(rng.normal(size=(1,)))
     y = X@A+b+jnp.array(rng.normal(size=(len(X),1), scale=nl))
-    return A, X, b, y
+    return A, X, b, seed, y
 
 
 @app.cell
@@ -34,7 +35,7 @@ def _(X, sns, y):
 
 
 @app.cell
-def _(A, MiniMLModel, MiniMLParam, X, b, mo, y):
+def _(A, MiniMLModel, MiniMLParam, X, b, mo, seed, squared_error_loss, y):
     # Try fitting a model
     class LinearModel(MiniMLModel):
         A: MiniMLParam
@@ -43,14 +44,14 @@ def _(A, MiniMLModel, MiniMLParam, X, b, mo, y):
         def __init__(self, n_in: int, n_out: int):
             self.A = MiniMLParam((n_in,n_out))
             self.b = MiniMLParam((n_out,))
-            super().__init__()
+            super().__init__(loss=squared_error_loss)
 
-        def _predict_kernel(self, X, buffer):
+        def _predict_kernel(self, X, buffer, rng_key, mode):
             return X@self.A(buffer)+self.b(buffer)
 
     lin_model = LinearModel(X.shape[1], y.shape[1])
-    lin_model.randomize()
-    lin_model.fit(X, y)
+    lin_model.randomize(seed)
+    res = lin_model.fit(X, y)
     y_hat = lin_model.predict(X)
 
     mo.md(f"""
@@ -58,13 +59,13 @@ def _(A, MiniMLModel, MiniMLParam, X, b, mo, y):
     Real equation:
 
     $$
-    {A[:,0]}x+{b[0]}
+    {A[:,0]}x+({b[0]})
     $$
 
     Fitted equation:
 
     $$
-    {lin_model.A.value[:,0]}x+{lin_model.b.value[0]}
+    {lin_model.A.value[:,0]}x+({lin_model.b.value[0]})
     $$
 
     Final average loss per sample: {lin_model.total_loss(y, y_hat)/len(y):.2e}

@@ -452,9 +452,9 @@ class MiniMLModel(ABC):
             buf_in = buffer.at[p_mask].set(p)
             y_pred = self._predict_kernel(
                 X,
-                buffer=buf_in,
-                rng_key=rng_key,
-                mode=PredictMode.TRAINING,
+                buf_in,
+                rng_key,
+                PredictMode.TRAINING,
                 **predict_kwargs,
             )
             loss = self.total_loss(y, y_pred, reg_lambda, buf_in)
