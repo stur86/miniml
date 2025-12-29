@@ -39,7 +39,7 @@ class MiniMLRandom(ABC):
         return self._dtype
 
     @abstractmethod
-    def _generate(self, rng_key: JXArray) -> JXArray:
+    def generate(self, rng_key: JXArray) -> JXArray:
         """Abstract method to generate random numbers.
 
         Args:
@@ -60,7 +60,7 @@ class MiniMLRandom(ABC):
             tuple[JXArray, JXArray]: A tuple containing the generated random array and the new random key.
         """
         new_key, subkey = jax.random.split(rng_key)
-        random_array = self._generate(subkey).astype(self._dtype)
+        random_array = self.generate(subkey).astype(self._dtype)
         return random_array, new_key
 
 
@@ -84,7 +84,7 @@ class RandomMask(MiniMLRandom):
             raise ValueError("Probability p must be in the range [0.0, 1.0]")
         self._p = p
 
-    def _generate(self, rng_key: JXArray) -> JXArray:
+    def generate(self, rng_key: JXArray) -> JXArray:
         return jax.random.bernoulli(rng_key, p=self._p, shape=self._shape).astype(
             self._dtype
         )

@@ -7,7 +7,7 @@ import pytest
 
 def test_miniml_random_properties():
     class DummyRandom(MiniMLRandom):
-        def _generate(self, rng_key: JXArray) -> JXArray:
+        def generate(self, rng_key: JXArray) -> JXArray:
             return jax.numpy.zeros(self.shape, dtype=self.dtype)
         
     shape = (2, 3)
