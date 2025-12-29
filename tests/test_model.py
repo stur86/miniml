@@ -4,7 +4,7 @@ import pytest
 import jax.numpy as jnp
 from jax import Array as JXArray
 from miniml.param import MiniMLParam, MiniMLError
-from miniml.model import MiniMLModel, MiniMLModelList
+from miniml.model import MiniMLModel, MiniMLModelList, PredictMode
 from miniml.loss import squared_error_loss, LNormRegularization
 from miniml.optim.adam import AdamOptimizer
 
@@ -16,7 +16,14 @@ def test_model_basic(tmp_path: Path):
             self._c = MiniMLParam((1,))
             super().__init__()
 
-        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+        def _predict_kernel(
+            self,
+            X: JXArray,
+            buffer: JXArray,
+            rng_key: JXArray | None = None,
+            mode: PredictMode = PredictMode.INFERENCE,
+            **predict_kwargs,
+        ) -> JXArray:
             return self._c(buffer)
 
     class LinearModel(MiniMLModel):
@@ -28,10 +35,23 @@ def test_model_basic(tmp_path: Path):
 
             super().__init__()
 
-        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+        def _predict_kernel(
+            self,
+            X: JXArray,
+            buffer: JXArray,
+            rng_key: JXArray | None = None,
+            mode: PredictMode = PredictMode.INFERENCE,
+            **predict_kwargs,
+        ) -> JXArray:
             M = self._M(buffer)
             b = self._b(buffer)
-            c = self._c._predict_kernel(X, buffer)
+            c = self._c._predict_kernel(
+                X,
+                buffer,
+                rng_key=rng_key,
+                mode=mode,
+                **predict_kwargs,
+            )
             return X @ M + b + c
 
     m = LinearModel()
@@ -90,8 +110,21 @@ def test_bind_and_unbind():
             self.p = MiniMLParam((2,))
             super().__init__()
 
-        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
-            return super()._predict_kernel(X, buffer)
+        def _predict_kernel(
+            self,
+            X: JXArray,
+            buffer: JXArray,
+            rng_key: JXArray | None = None,
+            mode: PredictMode = PredictMode.INFERENCE,
+            **predict_kwargs,
+        ) -> JXArray:
+            return super()._predict_kernel(
+                X,
+                buffer,
+                rng_key=rng_key,
+                mode=mode,
+                **predict_kwargs,
+            )
 
     m = M()
     with pytest.raises(MiniMLError, match="Model parameters are not bound to a buffer"):
@@ -112,7 +145,14 @@ def test_dtype_mismatch():
             self.p2 = MiniMLParam((2,), dtype=np.float64)
             super().__init__()
 
-        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+        def _predict_kernel(
+            self,
+            X: JXArray,
+            buffer: JXArray,
+            rng_key: JXArray | None = None,
+            mode: PredictMode = PredictMode.INFERENCE,
+            **predict_kwargs,
+        ) -> JXArray:
             return self.p1(buffer) + self.p2(buffer)
 
     with pytest.raises(MiniMLError, match="parameter dtype mismatch"):
@@ -125,16 +165,42 @@ def test_child_model_no_super():
             self.p = MiniMLParam((1,))
             # Forgot super().__init__()
 
-        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
-            return super()._predict_kernel(X, buffer)
+        def _predict_kernel(
+            self,
+            X: JXArray,
+            buffer: JXArray,
+            rng_key: JXArray | None = None,
+            mode: PredictMode = PredictMode.INFERENCE,
+            **predict_kwargs,
+        ) -> JXArray:
+            return super()._predict_kernel(
+                X,
+                buffer,
+                rng_key=rng_key,
+                mode=mode,
+                **predict_kwargs,
+            )
 
     class Parent(MiniMLModel):
         def __init__(self):
             self.child = BadChild()
             super().__init__()
 
-        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
-            return super()._predict_kernel(X, buffer)
+        def _predict_kernel(
+            self,
+            X: JXArray,
+            buffer: JXArray,
+            rng_key: JXArray | None = None,
+            mode: PredictMode = PredictMode.INFERENCE,
+            **predict_kwargs,
+        ) -> JXArray:
+            return super()._predict_kernel(
+                X,
+                buffer,
+                rng_key=rng_key,
+                mode=mode,
+                **predict_kwargs,
+            )
 
     with pytest.raises(MiniMLError, match="was not properly initialized"):
         Parent()
@@ -146,8 +212,21 @@ def test_save_before_bind(tmp_path: Path):
             self.p = MiniMLParam((1,))
             super().__init__()
 
-        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
-            return super()._predict_kernel(X, buffer)
+        def _predict_kernel(
+            self,
+            X: JXArray,
+            buffer: JXArray,
+            rng_key: JXArray | None = None,
+            mode: PredictMode = PredictMode.INFERENCE,
+            **predict_kwargs,
+        ) -> JXArray:
+            return super()._predict_kernel(
+                X,
+                buffer,
+                rng_key=rng_key,
+                mode=mode,
+                **predict_kwargs,
+            )
 
     m = M()
     with pytest.raises(MiniMLError, match="bound to buffers; can not save"):
@@ -160,8 +239,21 @@ def test_load_before_bind(tmp_path: Path):
             self.p = MiniMLParam((n,))
             super().__init__()
 
-        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
-            return super()._predict_kernel(X, buffer)
+        def _predict_kernel(
+            self,
+            X: JXArray,
+            buffer: JXArray,
+            rng_key: JXArray | None = None,
+            mode: PredictMode = PredictMode.INFERENCE,
+            **predict_kwargs,
+        ) -> JXArray:
+            return super()._predict_kernel(
+                X,
+                buffer,
+                rng_key=rng_key,
+                mode=mode,
+                **predict_kwargs,
+            )
 
     m = M(n=2)
     m.bind()
@@ -178,7 +270,14 @@ def test_clone_model():
             self.p = MiniMLParam((n,))
             super().__init__()
 
-        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+        def _predict_kernel(
+            self,
+            X: JXArray,
+            buffer: JXArray,
+            rng_key: JXArray | None = None,
+            mode: PredictMode = PredictMode.INFERENCE,
+            **predict_kwargs,
+        ) -> JXArray:
             return X + self.p(buffer)
 
     m1 = CustomModel(n=3)
@@ -197,7 +296,14 @@ def test_plan_model():
             self.p = MiniMLParam((n,m))
             super().__init__()
 
-        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+        def _predict_kernel(
+            self,
+            X: JXArray,
+            buffer: JXArray,
+            rng_key: JXArray | None = None,
+            mode: PredictMode = PredictMode.INFERENCE,
+            **predict_kwargs,
+        ) -> JXArray:
             return X + self.p(buffer)
 
     plan = CustomModel.plan(4, m=3)
@@ -216,7 +322,14 @@ def test_non_picklable_init_args():
             self.p = MiniMLParam((1,))
             super().__init__()
 
-        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+        def _predict_kernel(
+            self,
+            X: JXArray,
+            buffer: JXArray,
+            rng_key: JXArray | None = None,
+            mode: PredictMode = PredictMode.INFERENCE,
+            **predict_kwargs,
+        ) -> JXArray:
             return X + self.p(buffer)
     
     m = CustomModel(func=lambda x: x)
@@ -261,7 +374,14 @@ def test_linear_model_fit_no_reg(method: str):
             self.b = MiniMLParam((1,))
             super().__init__(loss=squared_error_loss)
 
-        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+        def _predict_kernel(
+            self,
+            X: JXArray,
+            buffer: JXArray,
+            rng_key: JXArray | None = None,
+            mode: PredictMode = PredictMode.INFERENCE,
+            **predict_kwargs,
+        ) -> JXArray:
             return self.a(buffer) * X + self.b(buffer)
 
     # Generate data: y = 2x + 1
@@ -288,7 +408,14 @@ def test_linear_model_fit_with_adam():
             self.b = MiniMLParam((1,))
             super().__init__(loss=squared_error_loss)
 
-        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+        def _predict_kernel(
+            self,
+            X: JXArray,
+            buffer: JXArray,
+            rng_key: JXArray | None = None,
+            mode: PredictMode = PredictMode.INFERENCE,
+            **predict_kwargs,
+        ) -> JXArray:
             return self.a(buffer) * X + self.b(buffer)
 
     # Generate data: y = 3x + 2
@@ -316,7 +443,14 @@ def test_linear_model_fit_with_l2_reg(method: str):
             self.b = MiniMLParam((1,))
             super().__init__(loss=squared_error_loss)
 
-        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+        def _predict_kernel(
+            self,
+            X: JXArray,
+            buffer: JXArray,
+            rng_key: JXArray | None = None,
+            mode: PredictMode = PredictMode.INFERENCE,
+            **predict_kwargs,
+        ) -> JXArray:
             return self.a(buffer) * X + self.b(buffer)
 
     # Data: y = 2x + 1
@@ -349,16 +483,42 @@ def test_model_list():
             self.p = MiniMLParam((1,))
             super().__init__(loss=squared_error_loss)
 
-        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
-            return super()._predict_kernel(X, buffer)
+        def _predict_kernel(
+            self,
+            X: JXArray,
+            buffer: JXArray,
+            rng_key: JXArray | None = None,
+            mode: PredictMode = PredictMode.INFERENCE,
+            **predict_kwargs,
+        ) -> JXArray:
+            return super()._predict_kernel(
+                X,
+                buffer,
+                rng_key=rng_key,
+                mode=mode,
+                **predict_kwargs,
+            )
 
     class M2(MiniMLModel):
         def __init__(self):
             self.p = MiniMLParam((2,))
             super().__init__()
 
-        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
-            return super()._predict_kernel(X, buffer)
+        def _predict_kernel(
+            self,
+            X: JXArray,
+            buffer: JXArray,
+            rng_key: JXArray | None = None,
+            mode: PredictMode = PredictMode.INFERENCE,
+            **predict_kwargs,
+        ) -> JXArray:
+            return super()._predict_kernel(
+                X,
+                buffer,
+                rng_key=rng_key,
+                mode=mode,
+                **predict_kwargs,
+            )
 
     mlist = MiniMLModelList([M1(), M2()])
     assert len(mlist._contents) == 2
@@ -381,8 +541,21 @@ def test_model_set_get_params():
             self.p2 = MiniMLParam((3,))
             super().__init__()
 
-        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
-            return super()._predict_kernel(X, buffer)
+        def _predict_kernel(
+            self,
+            X: JXArray,
+            buffer: JXArray,
+            rng_key: JXArray | None = None,
+            mode: PredictMode = PredictMode.INFERENCE,
+            **predict_kwargs,
+        ) -> JXArray:
+            return super()._predict_kernel(
+                X,
+                buffer,
+                rng_key=rng_key,
+                mode=mode,
+                **predict_kwargs,
+            )
 
     m = M()
     m.bind()
@@ -424,7 +597,14 @@ def test_pre_fit():
             self.p2 = MiniMLParam((1,))
             super().__init__(loss=squared_error_loss)
 
-        def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+        def _predict_kernel(
+            self,
+            X: JXArray,
+            buffer: JXArray,
+            rng_key: JXArray | None = None,
+            mode: PredictMode = PredictMode.INFERENCE,
+            **predict_kwargs,
+        ) -> JXArray:
             return self.p1(buffer) * X + self.p2(buffer)
 
         def _pre_fit(self, X: JXArray, y: JXArray) -> set[str]:

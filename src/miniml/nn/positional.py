@@ -1,6 +1,6 @@
 from jax import Array as JXArray
 import jax.numpy as jnp
-from miniml.model import MiniMLModel
+from miniml.model import MiniMLModel, PredictMode
 from miniml.param import MiniMLParam
 
 class PositionalEmbedding(MiniMLModel):
@@ -23,7 +23,14 @@ class PositionalEmbedding(MiniMLModel):
         self._pos_embeddings = MiniMLParam((max_length, dim))
         super().__init__()
 
-    def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+    def _predict_kernel(
+        self,
+        X: JXArray,
+        buffer: JXArray,
+        rng_key: JXArray | None = None,
+        mode: PredictMode = PredictMode.INFERENCE,
+        **predict_kwargs,
+    ) -> JXArray:
         pos_embd = self._pos_embeddings(buffer)
         seq_length = X.shape[1]
         if seq_length > self._max_length:
@@ -73,7 +80,14 @@ class RotaryPositionalEmbedding(MiniMLModel):
 
         super().__init__()
 
-    def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+    def _predict_kernel(
+        self,
+        X: JXArray,
+        buffer: JXArray,
+        rng_key: JXArray | None = None,
+        mode: PredictMode = PredictMode.INFERENCE,
+        **predict_kwargs,
+    ) -> JXArray:
         seq_length = X.shape[-2]
         sin_emb = self._sin_embeddings
         cos_emb = self._cos_embeddings

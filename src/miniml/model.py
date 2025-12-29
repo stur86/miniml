@@ -1,6 +1,7 @@
 import numpy as np
 import pickle
 from abc import ABC, abstractmethod
+from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable, Type, TypeVar, Generic
 import time
@@ -20,6 +21,18 @@ if sys.version_info >= (3, 11):
     from typing import Self
 else:
     from typing_extensions import Self
+
+
+class PredictMode(Enum):
+    """Prediction mode for MiniML models.
+
+    Attributes:
+        TRAINING: Prediction performed during training/optimization.
+        INFERENCE: Prediction performed during inference/evaluation.
+    """
+
+    TRAINING = "training"
+    INFERENCE = "inference"
 
 
 # Generic interface for something that has parameters
@@ -63,10 +76,11 @@ class MiniMLModel(ABC):
 
     Base for any MiniML model. It should be subclassed as follows:
 
-    * the constructor must declare all MiniMLParam and MiniMLModels
-      directly as members of the MiniMLModel object;
-    * the super() constructor must be called at the end;
-    * the _predict_kernel() method must be implemented.
+        * the constructor must declare all MiniMLParam and MiniMLModels
+            directly as members of the MiniMLModel object;
+        * the super() constructor must be called at the end;
+        * the _predict_kernel() method must be implemented, supporting both
+            training and inference modes and an optional RNG key.
 
     """
 
@@ -311,23 +325,28 @@ class MiniMLModel(ABC):
         )
 
     @abstractmethod
-    def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
-        pass
-    
-    def _fit_predict_kernel(self, X: JXArray, buffer: JXArray, rng_key: JXArray | None = None) -> JXArray:
-        """Prediction kernel used during fitting. By default, it calls _predict_kernel.
-        Can be overridden in subclasses to provide different behavior during fitting,
-        or make use of the rng_key for stochastic models (e.g. dropout).
-        
+    def _predict_kernel(
+        self,
+        X: JXArray,
+        buffer: JXArray,
+        rng_key: JXArray | None = None,
+        mode: PredictMode = PredictMode.INFERENCE,
+        **predict_kwargs: Any,
+    ) -> JXArray:
+        """Core prediction kernel used for both training and inference.
+
+        Subclasses can branch on ``mode`` and optionally use ``rng_key``
+        for stochastic behaviour (e.g. dropout) during training.
+
         Args:
-            X (JXArray): Input data.
-            buffer (JXArray): Parameter buffer.
-            rng_key (JXArray): JAX random key for stochastic models. Ignored by default.
-            
-        Returns:
-            JXArray: Predicted output.
+            X: Input data.
+            buffer: Parameter buffer.
+            rng_key: Optional JAX random key for stochastic models.
+            mode: Prediction mode (training or inference).
+            **predict_kwargs: Additional keyword-only arguments for model-specific
+                behaviour.
         """
-        return self._predict_kernel(X, buffer=buffer)
+        raise NotImplementedError
 
     def predict(self, X: JXArray, **predict_kwargs: dict[str, Any]) -> JXArray:
         """Predict the output for the given input data.
@@ -341,7 +360,18 @@ class MiniMLModel(ABC):
             JXArray: Predicted output.
         """
         if not hasattr(self, "_jit_predict_kernel"):
-            self._jit_predict_kernel = jax.jit(self._predict_kernel, inline=True)
+
+            def _inference_kernel(X: JXArray, buffer: JXArray, **kwargs: Any) -> JXArray:
+                return self._predict_kernel(
+                    X,
+                    buffer=buffer,
+                    rng_key=None,
+                    mode=PredictMode.INFERENCE,
+                    **kwargs,
+                )
+
+            self._jit_predict_kernel = jax.jit(_inference_kernel, inline=True)
+
         return self._jit_predict_kernel(X, buffer=self._buffer, **predict_kwargs)
 
     def __call__(self, X: JXArray) -> JXArray:
@@ -420,7 +450,13 @@ class MiniMLModel(ABC):
         def _targ_fun(p: JXArray, rng_key: JXArray | None) -> JXArray:
             nonlocal buffer
             buf_in = buffer.at[p_mask].set(p)
-            y_pred = self._fit_predict_kernel(X, buffer=buf_in, rng_key=rng_key, **predict_kwargs)
+            y_pred = self._predict_kernel(
+                X,
+                buffer=buf_in,
+                rng_key=rng_key,
+                mode=PredictMode.TRAINING,
+                **predict_kwargs,
+            )
             loss = self.total_loss(y, y_pred, reg_lambda, buf_in)
             return loss
 

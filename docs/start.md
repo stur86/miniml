@@ -14,7 +14,7 @@ class LinearModel(MiniMLModel):
         self.b = MiniMLParam((n_out,))
         super().__init__()
 
-    def _predict_kernel(self, X, buffer):
+    def _predict_kernel(self, X, buffer, rng_key=None, mode=None):
         return X@self.A(buffer)+self.b(buffer)
 
 if __name__ == "__main__":
@@ -73,11 +73,11 @@ If either of these things aren't done, the model won't work. Parameters are tens
 #### Predict kernel implementation
 
 ```py
-def _predict_kernel(self, X, buffer):
+def _predict_kernel(self, X, buffer, rng_key=None, mode=None):
     return X@self.A(buffer)+self.b(buffer)
 ```
 
-`MiniMLModel` is an abstract base class with `._predict_kernel` as an abstract method, meaning any child class has to provide its implementation of it. This is the "forward" inference method. It takes in the input and a buffer (which contains all the model's parameters), and it must return the output.
+`MiniMLModel` is an abstract base class with `._predict_kernel` as an abstract method, meaning any child class has to provide its implementation of it. This is the "forward" method. It takes in the input and a buffer (which contains all the model's parameters), and it must return the output.
 
 !!! note
     The parameter `buffer` is necessary because Jax requires all differentiable functions to be "pure", meaning they can't modify state.
@@ -91,8 +91,32 @@ def _predict_kernel(self, X, buffer):
 `X` should be a Jax array, and the parameters can be accessed by calling them with the buffer as an argument; they will also be Jax arrays.
 If any parameter is not called this way it will not use the correct values during fitting. Write this function sticking to Jax philosophy for differentiability (use Jax functions and functional constructs).
 
-!!! note
-    Sometimes, we may want the logic used for prediction at inference time to be different from the logic used at training time (for example, for a transformer it's useful to compute the next token for an entire sequence when training, but during inference we only need the immediate next token). In this case, it's possible to override the `_fit_predict_kernel` method instead. By default this method returns the output of `_predict_kernel` and it has the same exact interface, but it can be used to introduce distinct behaviour instead.
+The additional arguments have the following meaning:
+
+* `rng_key` is an optional JAX random key that can be used by stochastic models (for example, to implement dropout during training). It will be provided by the optimizer during `.fit` and is always `None` during `.predict`.
+* `mode` is a flag indicating whether the call is happening in training or inference. During training, `.fit` invokes `_predict_kernel` with `mode` set to a training value; during inference, `.predict` uses an inference value instead. This can be used inside `_predict_kernel` to switch behaviour depending on the context.
+
+Here for example is how we could implement input dropout inside `_predict_kernel`:
+
+```python
+def _predict_kernel(self, X, buffer, rng_key=None, mode=None):
+    if mode == PredictMode.TRAIN:
+        mask = jax.random.bernoulli(rng_key, p=0.9, shape=X.shape)
+        X = X * mask / 0.9  # Inverted dropout
+    return X@self.A(buffer)+self.b(buffer)
+```
+
+!!! warning
+    When using `rng_key` in composite models it is important to split it before passing it to child models or layers, to ensure that each one gets a different key. For example:
+
+    ```python
+    def _predict_kernel(self, X, buffer, rng_key=None, mode=None):
+        if rng_key is not None:
+            rng_key, subkey = jax.random.split(rng_key)
+        X = self._child_model._predict_kernel(X, buffer, rng_key=subkey, mode=mode)
+        # ... do stuff with our own rng_key ...
+        return X
+    ```
 
 #### Example data
 

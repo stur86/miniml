@@ -1,5 +1,5 @@
 from jax import Array as JXArray
-from miniml.model import MiniMLModel
+from miniml.model import MiniMLModel, PredictMode
 from miniml.loss import (
     RegLossFunction,
     LNormRegularization,
@@ -62,5 +62,18 @@ class MLP(MiniMLModel):
 
         super().__init__(loss=loss)
 
-    def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
-        return self._layer_stack._predict_kernel(X, buffer)
+    def _predict_kernel(
+        self,
+        X: JXArray,
+        buffer: JXArray,
+        rng_key: JXArray | None = None,
+        mode: PredictMode = PredictMode.INFERENCE,
+        **predict_kwargs,
+    ) -> JXArray:
+        return self._layer_stack._predict_kernel(
+            X,
+            buffer,
+            rng_key=rng_key,
+            mode=mode,
+            **predict_kwargs,
+        )

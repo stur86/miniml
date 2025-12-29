@@ -1,6 +1,6 @@
 from typing import Any
 from jax import numpy as jnp, Array as JxArray
-from miniml.model import MiniMLModel
+from miniml.model import MiniMLModel, PredictMode
 from miniml.nn.linear import Linear
 from miniml.param import MiniMLParam, DTypeLike, MiniMLError
 from miniml.loss import (
@@ -134,7 +134,13 @@ class MultiHeadAttention(MiniMLModel):
         return super().predict(X, **predict_kwargs)  # type: ignore
 
     def _predict_kernel(
-        self, X: _MultiHeadArg, buffer: JxArray, attn_mask: JxArray | None = None
+        self,
+        X: _MultiHeadArg,
+        buffer: JxArray,
+        rng_key: JxArray | None = None,
+        mode: PredictMode = PredictMode.INFERENCE,
+        attn_mask: JxArray | None = None,
+        **predict_kwargs: Any,
     ) -> JxArray:
         is_self_attn = not isinstance(X, tuple)
         if self.homogeneous and is_self_attn:
@@ -175,4 +181,10 @@ class MultiHeadAttention(MiniMLModel):
             attn_output_heads.shape[:-2] + (self._embed_dim,)
         )
 
-        return self._out_proj._predict_kernel(attn_output, buffer)
+        return self._out_proj._predict_kernel(
+            attn_output,
+            buffer,
+            rng_key=rng_key,
+            mode=mode,
+            **predict_kwargs,
+        )

@@ -2,6 +2,7 @@ from jax import Array as JXArray
 import jax.numpy as jnp
 from numpy.typing import DTypeLike
 from miniml import MiniMLModel, MiniMLParam
+from miniml.model import PredictMode
 from miniml.loss import (
     LossFunction,
     squared_error_loss,
@@ -43,5 +44,12 @@ class Linear(MiniMLModel):
 
         super().__init__(loss)
 
-    def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+    def _predict_kernel(
+        self,
+        X: JXArray,
+        buffer: JXArray,
+        rng_key: JXArray | None = None,
+        mode: PredictMode = PredictMode.INFERENCE,
+        **predict_kwargs,
+    ) -> JXArray:
         return X @ self._W(buffer) + self._b(buffer)
