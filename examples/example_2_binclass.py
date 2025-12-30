@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.16.0"
+__generated_with = "0.17.8"
 app = marimo.App(width="medium")
 
 
@@ -53,10 +53,10 @@ def _(CrossEntropyLogLoss, LNormRegularization, MiniMLModel, MiniMLParam, jnp):
             self.M = MiniMLParam((6,1), reg_loss=LNormRegularization(p=2, root=False))
             super().__init__(CrossEntropyLogLoss(zero_ref=True))
 
-        def _predict_kernel(self, X, buf):
+        def _predict_kernel(self, X, buffer, rng_key, mode):
             # Augment X with polynomial features
             X_aug = jnp.array([jnp.ones(len(X)), X[:,0], X[:,1], X[:,0]**2, X[:,0]*X[:,1], X[:,1]**2])
-            return (X_aug.T@self.M(buf))
+            return (X_aug.T@self.M(buffer))
     return (LogisticRegressor,)
 
 
@@ -100,12 +100,10 @@ def _(X, class_R, jnp, logreg, np, plt, sns, y_hat):
 
 @app.cell
 def _(N, jnp, logreg, mo, y, y_hat, y_hat_logits):
-    mo.md(
-        f"""
+    mo.md(f"""
     Accuracy: {jnp.mean(y_hat==y[:,0]):.2%}
     Average loss: {logreg.total_loss(y, y_hat_logits)/N:.2e}
-    """
-    )
+    """)
     return
 
 

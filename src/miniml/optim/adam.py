@@ -48,7 +48,8 @@ class AdamOptimizer(MiniMLOptimizer):
         self._maxiter = maxiter
 
     def _minimize_kernel(
-        self, x0: JxArray, methods: OptimizationMethods
+        self, x0: JxArray, methods: OptimizationMethods, 
+        seed: int | None = None
     ) -> MiniMLOptimResult:
         n = x0.shape[0]
         m = jnp.zeros_like(x0)
@@ -59,12 +60,17 @@ class AdamOptimizer(MiniMLOptimizer):
         ), "Jacobian function must be provided for Adam optimizer."
         gradfun = methods.jac
 
-        def adam_step(t: int, state: JxArray) -> JxArray:
+        def adam_step(t: int, internals: tuple[JxArray, JxArray | None]) -> tuple[JxArray, JxArray | None]:
+            state, rng_key = internals
             flag = state[-1]
             x, m, v = jnp.split(state[:-1], 3)
+            if rng_key is not None:
+                rng_key, update_key = jax.random.split(rng_key)
+            else:
+                update_key = None
 
             def update_fn(x, m, v):
-                grad = gradfun(x)
+                grad = gradfun(x, update_key)
                 m = self._beta_1 * m + (1 - self._beta_1) * grad
                 v = self._beta_2 * v + (1 - self._beta_2) * (grad**2)
                 m_hat = m / (1 - self._beta_1**t)
@@ -77,12 +83,17 @@ class AdamOptimizer(MiniMLOptimizer):
 
             x, m, v = jax.lax.cond(flag == 0, update_fn, no_update_fn, x, m, v)
             flag = jnp.where(jnp.linalg.norm(m) < self._tol, jnp.where(flag == 0, t, flag), 0.0)
-            return jnp.concatenate([x, m, v, jnp.array([flag])], axis=0)
+            return (jnp.concatenate([x, m, v, jnp.array([flag])], axis=0), rng_key)
 
         adam_step_jit = jax.jit(adam_step, inline=True)
-        state = jnp.concatenate([x, m, v, jnp.array([0.0])], axis=0)
+        
+        prng_key: JxArray | None = None
+        if seed is not None:
+            prng_key = jax.random.PRNGKey(seed)
+        
+        state = (jnp.concatenate([x, m, v, jnp.array([0.0])], axis=0), prng_key)
 
-        out_state = jax.lax.fori_loop(1, self._maxiter + 1, adam_step_jit, state)
+        out_state, last_rng_key = jax.lax.fori_loop(1, self._maxiter + 1, adam_step_jit, state)
 
         success = out_state[-1] > 0
         n_iters = int(out_state[-1]) if success else self._maxiter
@@ -94,7 +105,7 @@ class AdamOptimizer(MiniMLOptimizer):
             message=(
                 "Optimization converged." if success else "Maximum iterations reached."
             ),
-            objective_value=float(methods.obj(x_opt)),
+            objective_value=float(methods.obj(x_opt, last_rng_key)),
             n_iterations=n_iters,
             n_function_evaluations=None,
             n_jacobian_evaluations=n_iters,

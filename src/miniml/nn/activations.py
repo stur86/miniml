@@ -4,6 +4,7 @@ from typing import Callable
 from jax.scipy.special import erf
 from jax.nn import softplus as jax_softplus
 from miniml import MiniMLModel
+from miniml.model import PredictMode
 
 ActivationFunction = Callable[[JXArray], JXArray]
 
@@ -55,5 +56,12 @@ class Activation(MiniMLModel):
         self._act = f
         super().__init__(loss=None)
 
-    def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+    def _predict_kernel(
+        self,
+        X: JXArray,
+        buffer: JXArray,
+        rng_key: JXArray | None = None,
+        mode: PredictMode = PredictMode.INFERENCE,
+        **predict_kwargs,
+    ) -> JXArray:
         return self._act(X)

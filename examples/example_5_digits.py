@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.16.0"
+__generated_with = "0.17.8"
 app = marimo.App(width="medium")
 
 
@@ -91,11 +91,16 @@ def _(
 def _(X_test, X_train, jnp, mlpc, y_test, y_train):
     res = mlpc.fit(X_train, y_train, reg_lambda=1.0)
 
-    print(res)
+    print("Success: ", res.success, " - ", res.message)
 
     y_pred = mlpc.predict(X_test)
 
     print(f"Accuracy: {jnp.mean(jnp.argmax(y_test, axis=1) == jnp.argmax(y_pred, axis=1)):.2%}")
+    return
+
+
+@app.cell
+def _():
     return
 
 

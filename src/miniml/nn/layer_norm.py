@@ -1,6 +1,6 @@
 from jax import Array as JxArray, numpy as jnp
 from numpy.typing import DTypeLike
-from miniml.model import MiniMLModel
+from miniml.model import MiniMLModel, PredictMode
 from miniml.param import MiniMLParam
 from miniml.loss import LossFunction, squared_error_loss
 
@@ -46,7 +46,14 @@ class LayerNorm(MiniMLModel):
 
         super().__init__(loss=loss)
 
-    def _predict_kernel(self, X: JxArray, buffer: JxArray) -> JxArray:
+    def _predict_kernel(
+        self,
+        X: JxArray,
+        buffer: JxArray,
+        rng_key: JxArray | None = None,
+        mode: PredictMode = PredictMode.INFERENCE,
+        **predict_kwargs,
+    ) -> JxArray:
         gamma = self._gamma(buffer)
         beta = self._beta(buffer)
         ndim = len(self._normalized_shape)

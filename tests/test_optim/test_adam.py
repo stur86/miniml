@@ -5,7 +5,7 @@ from miniml.optim.base import MiniMLOptimResult
 
 def test_adam_optimizer() -> None:
     # Create a dummy function
-    def dummy_objective(x):
+    def dummy_objective(x, _=None):
         return (x**2).sum()
 
     tol = 1e-12

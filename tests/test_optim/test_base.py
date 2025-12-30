@@ -1,6 +1,6 @@
 import pytest
 from itertools import product
-from jax import Array
+from jax import Array as JxArray
 from jax import numpy as jnp
 from miniml.optim.base import (
     MiniMLOptimizer,
@@ -22,9 +22,10 @@ def test_miniml_optimizer_init(config: OptimizationMethods.Config) -> None:
     class TestOptimizer(MiniMLOptimizer):
 
         def _minimize_kernel(
-            self, x0: Array, methods: OptimizationMethods
+            self, x0: JxArray, methods: OptimizationMethods, seed: int | None = None
         ) -> MiniMLOptimResult:
             assert methods.obj is not None
+            assert seed is None
             if self._config.deriv_require == DerivRequire.NONE:
                 assert methods.jac is None
                 assert methods.obj_and_jac is None
@@ -60,7 +61,7 @@ def test_miniml_optimizer_init(config: OptimizationMethods.Config) -> None:
             return MiniMLOptimResult(x_opt=x0, success=True, message="Test successful")
 
     # Create a dummy function
-    def dummy_objective(x: Array) -> Array:
+    def dummy_objective(x: JxArray, rng_key = None) -> JxArray:
         return (x**2).sum()
 
     optimizer = TestOptimizer(config)
@@ -70,3 +71,26 @@ def test_miniml_optimizer_init(config: OptimizationMethods.Config) -> None:
     assert jnp.all(result.x_opt == x0)
     assert result.success
     assert result.message == "Test successful"
+    
+def test_miniml_optimizer_use_seed() -> None:
+    
+    TEST_SEED = 42
+    
+    class SeedTestOptimizer(MiniMLOptimizer):
+        def _minimize_kernel(self, x0: JxArray, methods: OptimizationMethods, seed: int | None = None) -> MiniMLOptimResult:
+            assert seed == TEST_SEED
+            return MiniMLOptimResult(x_opt=x0, success=True, message="Seed test successful")
+        
+    def dummy_objective(x: JxArray, rng_key = None) -> JxArray:
+        return (x**2).sum()
+    
+    config = OptimizationMethods.Config(
+        deriv_require=DerivRequire.NONE, join_jac_and_value=False
+    )
+    optimizer = SeedTestOptimizer(config)
+    x0 = jnp.zeros(5)
+    result = optimizer(dummy_objective, x0, seed=TEST_SEED)
+    assert isinstance(result, MiniMLOptimResult)
+    assert jnp.all(result.x_opt == x0)
+    assert result.success
+    assert result.message == "Seed test successful"
