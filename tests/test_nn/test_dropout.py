@@ -8,7 +8,7 @@ def test_dropout_forward_training() -> None:
     key = jax.random.PRNGKey(0)
     x = jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
     dropout_rate = 0.5
-    dropout_model = Dropout(shape=x.shape, rate=dropout_rate)
+    dropout_model = Dropout(rate=dropout_rate)
     buffer = jnp.array([])
 
     out = dropout_model._predict_kernel(x, buffer=buffer, rng_key=key, mode=PredictMode.TRAINING)

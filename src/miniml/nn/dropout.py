@@ -5,7 +5,7 @@ from miniml.random import RandomMask
 
 class Dropout(MiniMLModel):
     
-    def __init__(self, shape: tuple[int, ...], rate: float = 0.5) -> None:
+    def __init__(self, rate: float = 0.5) -> None:
         """Initialize the Dropout model.
 
         Args:
@@ -16,7 +16,6 @@ class Dropout(MiniMLModel):
             raise ValueError("Dropout rate must be in the range [0.0, 1.0).")
         
         self._rate = rate
-        self._dropout_mask = RandomMask(shape=shape, p=(1-rate))
         super().__init__()
         
     def _predict_kernel(self, X: Array, buffer: Array, rng_key: Array | None = None, mode: PredictMode = PredictMode.INFERENCE) -> Array:
@@ -25,6 +24,8 @@ class Dropout(MiniMLModel):
         else:
             if rng_key is None:
                 raise ValueError("rng_key must be provided during training mode for Dropout.")
-            mask = self._dropout_mask.generate(rng_key)
-            X = X * mask / (1.0 - self._rate)
+            compl_rate = 1.0 - self._rate
+            dropout_mask = RandomMask(X.shape, p=compl_rate, dtype=X.dtype)
+            mask = dropout_mask.generate(rng_key)
+            X = X * mask / compl_rate
         return X
