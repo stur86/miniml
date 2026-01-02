@@ -7,6 +7,7 @@ from miniml.optim.base import (
     DerivRequire,
     MiniMLOptimResult,
     OptimizationMethods,
+    _get_ortho_component,
 )
 
 
@@ -94,3 +95,55 @@ def test_miniml_optimizer_use_seed() -> None:
     assert jnp.all(result.x_opt == x0)
     assert result.success
     assert result.message == "Seed test successful"
+
+def test_get_ortho_component() -> None:
+    w = jnp.array([1.0, 2.0, 3.0])
+    grad = jnp.array([4.0, 5.0, 6.0])
+    
+    grad_ortho = _get_ortho_component(grad, w)
+    
+    # Check that grad_ortho is orthogonal to w
+    dot_product = jnp.dot(grad_ortho, w)
+    assert jnp.isclose(dot_product, 0.0, atol=1e-5)
+    
+    # Check that grad_ortho + projection equals original grad
+    w_norm_sq = jnp.sum(w * w)
+    grad_proj = (jnp.sum(grad * w) / w_norm_sq) * w
+    reconstructed_grad = grad_ortho + grad_proj
+    assert jnp.allclose(reconstructed_grad, grad, atol=1e-5)
+    
+def test_optim_config() -> None:
+    # Test that ValueError is raised when ortho_grad is True and deriv_require is HESSIAN
+    with pytest.raises(ValueError):
+        OptimizationMethods.Config(
+            deriv_require=DerivRequire.HESSIAN,
+            ortho_grad=True
+        )
+
+def test_opt_methods_ortho():
+    # Test that the orthogonalized gradient is computed correctly in OptimizationMethods.from_objective
+    v = jnp.array([1.0, 1.0, 0.0])
+    def dummy_objective(x: JxArray, rng_key = None) -> JxArray:
+        return (x**2).sum()+jnp.dot(x, v)
+    
+    config = OptimizationMethods.Config(
+        deriv_require=DerivRequire.HESSIAN_PRODUCT,
+        join_jac_and_value=True,
+        ortho_grad=True
+    )
+    
+    methods = OptimizationMethods.from_objective(dummy_objective, config)
+    assert methods.obj_and_jac is not None
+    assert methods.jac is not None
+    assert methods.hessp is not None
+    
+    x = jnp.array([0.0, 1.0, 0.0])    
+    val, grad_ortho = methods.obj_and_jac(x, None)
+    
+    assert jnp.isclose(val, dummy_objective(x), atol=1e-6)
+    assert jnp.isclose(grad_ortho, jnp.array([1.0, 0.0, 0.0]), atol=1e-6).all()
+    
+    grad_from_jac = methods.jac(x, None)
+    assert jnp.isclose(grad_ortho, grad_from_jac, atol=1e-6).all()
+
+    
