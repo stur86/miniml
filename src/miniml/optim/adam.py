@@ -35,6 +35,7 @@ class AdamBaseOptimizer(MiniMLOptimizer):
         beta_2: float = 0.999,
         eps: float = 1e-8,
         weight_decay: float = 0.0,
+        ortho_grad: bool = False,
         tol: float = 0.0,
         maxiter: int = 1000,
         decouple_weight_decay: bool = False,
@@ -52,6 +53,8 @@ class AdamBaseOptimizer(MiniMLOptimizer):
             weight_decay (float, optional): L2 weight decay coefficient.
                 For AdamOptimizer this is coupled to the gradient; for
                 AdamWOptimizer it is decoupled. Defaults to 0.0.
+            ortho_grad (bool, optional): If True, project gradients to be
+                orthogonal to the parameters at each step. Defaults to False.
             tol (float, optional): Tolerance for stopping criterion based on
                 the norm of the first moment. Defaults to 0.0.
             maxiter (int, optional): Maximum number of iterations. Defaults
@@ -62,7 +65,8 @@ class AdamBaseOptimizer(MiniMLOptimizer):
         """
         # Default configuration: we need the Jacobian, nothing else
         config = OptimizationMethods.Config(
-            deriv_require=DerivRequire.JACOBIAN, join_jac_and_value=False
+            deriv_require=DerivRequire.JACOBIAN, join_jac_and_value=False, 
+            ortho_grad=ortho_grad,
         )
         super().__init__(config)
         self._alpha = alpha
@@ -204,6 +208,7 @@ class AdamOptimizer(AdamBaseOptimizer):
         beta_2: float = 0.999,
         eps: float = 1e-8,
         weight_decay: float = 0.0,
+        ortho_grad: bool = False,
         tol: float = 0.0,
         maxiter: int = 1000,
     ) -> None:
@@ -226,6 +231,8 @@ class AdamOptimizer(AdamBaseOptimizer):
                 Defaults to 1e-8.
             weight_decay (float, optional): L2 weight decay coefficient
                 applied inside the gradient (coupled). Defaults to 0.0.
+            ortho_grad (bool, optional): If True, project gradients to be
+                orthogonal to the parameters at each step. Defaults to False.
             tol (float, optional): Tolerance for stopping criterion based on
                 the norm of the first moment. Defaults to 0.0.
             maxiter (int, optional): Maximum number of iterations. Defaults
@@ -237,6 +244,7 @@ class AdamOptimizer(AdamBaseOptimizer):
             beta_2=beta_2,
             eps=eps,
             weight_decay=weight_decay,
+            ortho_grad=ortho_grad,
             tol=tol,
             maxiter=maxiter,
             decouple_weight_decay=False,
@@ -253,6 +261,7 @@ class AdamWOptimizer(AdamBaseOptimizer):
         beta_2: float = 0.999,
         eps: float = 1e-8,
         weight_decay: float = 0.0,
+        ortho_grad: bool = False,
         tol: float = 0.0,
         maxiter: int = 1000,
     ) -> None:
@@ -276,6 +285,8 @@ class AdamWOptimizer(AdamBaseOptimizer):
                 Defaults to 1e-8.
             weight_decay (float, optional): L2 weight decay coefficient,
                 applied in a decoupled AdamW fashion. Defaults to 0.0.
+            ortho_grad (bool, optional): If True, project gradients to be
+                orthogonal to the parameters at each step. Defaults to False.
             tol (float, optional): Tolerance for stopping criterion based on
                 the norm of the first moment. Defaults to 0.0.
             maxiter (int, optional): Maximum number of iterations. Defaults
@@ -287,6 +298,7 @@ class AdamWOptimizer(AdamBaseOptimizer):
             beta_2=beta_2,
             eps=eps,
             weight_decay=weight_decay,
+            ortho_grad=ortho_grad,
             tol=tol,
             maxiter=maxiter,
             decouple_weight_decay=True,
