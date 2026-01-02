@@ -51,6 +51,34 @@ def cross_entropy_loss(y_true: JXArray, y_pred: JXArray) -> JXArray:
     return -jnp.sum(y_true * log_y_pred)
 
 
+def _stablemax_elem(x: JXArray) -> JXArray:
+    r"""Compute the StableMax element-wise transformation $s(x)$ for numerical stability:
+    
+    $$
+    s(x) = \begin{cases}
+    x + 1, & x > 0 \\
+    \frac{1}{1 - x}, & x \leq 0
+    \end{cases}
+    $$
+    """
+    return jnp.where(x > 0, x + 1.0, 1.0 / (1.0 - x))
+
+
+def stablemax(y: JXArray) -> JXArray:
+    r"""Apply the StableMax transformation element-wise to the input array.
+
+    $$
+    \text{StableMax}(x) = \frac{s(x)}{\sum_i s(x_i)}
+    $$
+
+    where $s(x)$ is the StableMax element-wise transformation defined in
+    `_stablemax_elem`.
+    """
+    ans = _stablemax_elem(y)
+    ans = ans / jnp.sum(ans, axis=-1, keepdims=True)
+    return ans
+
+
 class CrossEntropyLogLoss(LossFunctionBase):
     r"""Compute the cross-entropy loss between true and predicted values,
     assuming that $\hat{y}$ is an array of unnormalized logits instead of
@@ -82,6 +110,26 @@ class CrossEntropyLogLoss(LossFunctionBase):
             raise ValueError("Shapes of true and predicted values must match.")
 
         log_y_pred = log_softmax(log_y_pred, axis=-1)
+        return -jnp.sum(y_true * log_y_pred)
+
+
+class CrossEntropyStableMaxLogLoss(CrossEntropyLogLoss):
+    """Compute the cross-entropy loss between true and predicted values,
+    using the 'StableMax' in place of softmax for numerical stability.
+    See [L. Prieto et al., 2025](https://arxiv.org/abs/2501.04697) for details.
+    """
+
+    def __call__(self, y_true: JXArray, log_y_pred: JXArray) -> JXArray:
+        if self.zero_ref:
+            # Add a zero reference category
+            zero_shape = log_y_pred.shape[:-1] + (1,)
+            log_y_pred = jnp.concatenate([log_y_pred, jnp.zeros(zero_shape)], axis=-1)
+
+        if y_true.shape != log_y_pred.shape:
+            raise ValueError("Shapes of true and predicted values must match.")
+
+        y_pred = stablemax(log_y_pred)
+        log_y_pred = jnp.log(y_pred)
         return -jnp.sum(y_true * log_y_pred)
 
 
