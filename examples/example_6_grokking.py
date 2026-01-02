@@ -5,10 +5,12 @@ app = marimo.App(width="medium")
 
 with app.setup(hide_code=True):
     import marimo as mo
+    import numpy as np
     import jax
     import jax.numpy as jnp
     from jax.nn import one_hot as jax_one_hot
     import seaborn as sns
+    import matplotlib.pyplot as plt
 
     from miniml.nn import MLP
     from miniml.nn.activations import relu
@@ -66,7 +68,7 @@ class ModularDataset:
         return self.X[:train_n], self.X[train_n:], self.y[:train_n], self.y[train_n:]
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _():
     dset = ModularDataset()
 
@@ -81,43 +83,56 @@ def _():
     return model, test_X, test_y, train_X, train_y
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _():
     train_btn = mo.ui.run_button("neutral", label="Train")
     return (train_btn,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(train_btn):
-    train_btn
+    mo.center(train_btn)
     return
 
 
-@app.cell
-def _(model, train_X, train_btn, train_y):
+@app.cell(hide_code=True)
+def _(model, test_X, test_y, train_X, train_btn, train_y):
+    loss_iters = []
+    loss_curves = []
+    accuracy_curves = []
     if train_btn.value:
         model.randomize()
-        _opt = AdamWOptimizer(beta_1=0.9, beta_2=0.99, ortho_grad=True, maxiter=30)
+        _opt = AdamWOptimizer(alpha=0.001, beta_1=0.9, beta_2=0.99, ortho_grad=True, maxiter=100)
         for _i in range(100):
             res = model.fit(train_X, train_y, optimizer=_opt, reg_lambda=0.0)
-            print(_i, " - ", res.objective_value)
-    return
+            _train_loss = res.objective_value
+            _train_pred = model.predict(train_X)
+            _train_acc = jnp.mean(jnp.argmax(_train_pred, axis=-1) == train_y)
+            _test_pred = model.predict(test_X)
+            _test_loss = model.total_loss(test_y, _test_pred)
+            _test_acc = jnp.mean(jnp.argmax(_test_pred, axis=-1) == test_y)
+            print(f"Iteration {_i}: Train loss = {_train_loss} / Test loss = {_test_loss}")
+            loss_iters.append(_i)
+            loss_curves.append([_train_loss, _test_loss])
+            accuracy_curves.append([_train_acc, _test_acc])
+
+    loss_iters = np.array(loss_iters)
+    loss_curves = np.array(loss_curves)
+    accuracy_curves = np.array(accuracy_curves)
+    return accuracy_curves, loss_curves, loss_iters
 
 
 @app.cell
-def _(model, train_X, train_y):
-    jnp.mean(jnp.argmax(model.predict(train_X), axis=1) == train_y)
-    return
+def _(accuracy_curves, loss_curves, loss_iters):
+    _fig, _ax = plt.subplots(ncols=2, figsize=(12,6))
 
+    _ax[0].semilogy(loss_iters, loss_curves)
+    _ax[0].set_xlabel("Iteration")
+    _ax[0].set_ylabel("Loss")
 
-@app.cell
-def _(model, test_X, test_y):
-    jnp.mean(jnp.argmax(model.predict(test_X), axis=1) == test_y)
-    return
-
-
-@app.cell
-def _():
+    _ax[1].plot(loss_iters, accuracy_curves*100.0)
+    _ax[1].set_xlabel("Iteration")
+    _ax[1].set_ylabel("Accuracy (%)")
     return
 
 

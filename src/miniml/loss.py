@@ -78,7 +78,7 @@ def stablemax(y: JXArray) -> JXArray:
     ans = ans / jnp.sum(ans, axis=-1, keepdims=True)
     return ans
 
-def log_stablemax(y: JXArray) -> JXArray:
+def log_stablemax(y: JXArray, epsilon: float = 1e-12) -> JXArray:
     r"""Compute the log of the StableMax transformation for numerical stability.
 
     $$
@@ -89,8 +89,8 @@ def log_stablemax(y: JXArray) -> JXArray:
     `_stablemax_elem`.
     """
     s_x = _stablemax_elem(y)
-    log_s_x = jnp.log(s_x)
-    log_sum_s_x = jnp.log(jnp.sum(s_x, axis=-1, keepdims=True))
+    log_s_x = jnp.log(s_x+epsilon)
+    log_sum_s_x = jnp.log(jnp.sum(s_x+epsilon, axis=-1, keepdims=True))
     return log_s_x - log_sum_s_x
 
 class CrossEntropyLogLoss(LossFunctionBase):
