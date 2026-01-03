@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.17.8"
+__generated_with = "0.18.4"
 app = marimo.App(width="medium")
 
 with app.setup(hide_code=True):
@@ -91,7 +91,14 @@ def _():
 
 @app.cell(hide_code=True)
 def _(train_btn):
-    mo.center(train_btn)
+    mo.vstack([mo.md("""#### The model
+
+    Here we reproduce a model very similar to the one used in Figure 1 of the paper, as [seen in the paper's code repository](https://github.com/LucasPrietoAl/grokking-at-the-edge-of-numerical-stability). Our dataset is algorithmically generated; we use a one-hot encoded vector to represent two integers between 0 and 113 as inputs, and their sum, modulo 113, as output.
+
+    We then train a Multi-Layer Perceptron with two hidden layers of size 200 on this, using AdamW with orthogonalized gradients and cross-entropy with stablemax as our loss.
+
+    You can click the button below to start the training; even on CPU it should only take a few minutes at most. Each "iteration" printed corresponds to 30 steps of AdamW optimizer.
+    """), mo.center(train_btn)])
     return
 
 
@@ -102,19 +109,20 @@ def _(model, test_X, test_y, train_X, train_btn, train_y):
     accuracy_curves = []
     if train_btn.value:
         model.randomize()
-        _opt = AdamWOptimizer(alpha=0.001, beta_1=0.9, beta_2=0.99, ortho_grad=True, maxiter=100)
-        for _i in range(100):
-            res = model.fit(train_X, train_y, optimizer=_opt, reg_lambda=0.0)
-            _train_loss = res.objective_value
-            _train_pred = model.predict(train_X)
-            _train_acc = jnp.mean(jnp.argmax(_train_pred, axis=-1) == train_y)
-            _test_pred = model.predict(test_X)
-            _test_loss = model.total_loss(test_y, _test_pred)
-            _test_acc = jnp.mean(jnp.argmax(_test_pred, axis=-1) == test_y)
-            print(f"Iteration {_i}: Train loss = {_train_loss} / Test loss = {_test_loss}")
-            loss_iters.append(_i)
-            loss_curves.append([_train_loss, _test_loss])
-            accuracy_curves.append([_train_acc, _test_acc])
+        _opt = AdamWOptimizer(alpha=0.01, beta_1=0.9, beta_2=0.99, ortho_grad=True, maxiter=30)
+        with _opt.persistent():
+            for _i in range(100):
+                res = model.fit(train_X, train_y, optimizer=_opt, reg_lambda=0.0)
+                _train_loss = res.objective_value
+                _train_pred = model.predict(train_X)
+                _train_acc = jnp.mean(jnp.argmax(_train_pred, axis=-1) == train_y)
+                _test_pred = model.predict(test_X)
+                _test_loss = model.total_loss(test_y, _test_pred)
+                _test_acc = jnp.mean(jnp.argmax(_test_pred, axis=-1) == test_y)
+                print(f"Iteration {_i+1}: Train loss = {_train_loss} / Test loss = {_test_loss}")
+                loss_iters.append(_i)
+                loss_curves.append([_train_loss, _test_loss])
+                accuracy_curves.append([_train_acc, _test_acc])
 
     loss_iters = np.array(loss_iters)
     loss_curves = np.array(loss_curves)
@@ -122,17 +130,50 @@ def _(model, test_X, test_y, train_X, train_btn, train_y):
     return accuracy_curves, loss_curves, loss_iters
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(accuracy_curves, loss_curves, loss_iters):
     _fig, _ax = plt.subplots(ncols=2, figsize=(12,6))
 
-    _ax[0].semilogy(loss_iters, loss_curves)
-    _ax[0].set_xlabel("Iteration")
-    _ax[0].set_ylabel("Loss")
+    if len(loss_iters) > 0:
+        _ax[0].semilogy(loss_iters, loss_curves[:,0], label="Train")
+        _ax[0].semilogy(loss_iters, loss_curves[:,1], label="Test")
+        _ax[0].set_xlabel("Iteration")
+        _ax[0].set_ylabel("Loss")
+        _ax[0].legend()
+    
+        _ax[1].plot(loss_iters, accuracy_curves[:,0]*100.0, label="Train")
+        _ax[1].plot(loss_iters, accuracy_curves[:,1]*100.0, label="Test")
+        _ax[1].set_xlabel("Iteration")
+        _ax[1].set_ylabel("Accuracy (%)")
+        _ax[1].legend()
 
-    _ax[1].plot(loss_iters, accuracy_curves*100.0)
-    _ax[1].set_xlabel("Iteration")
-    _ax[1].set_ylabel("Accuracy (%)")
+    mo.vstack([
+        mo.md("""
+    Here we see the output. On the left, we have the plot of the loss. We should see that the train loss goes down very sharply, while the test loss stays up and only at a later stage has a lesser drop - this is where the "grokking" occurs. The train loss may have a sharp peak around this time too.
+
+    On the right, we have the accuracy plot, which should show a much more dramatic result; while training accuracy goes up to 100% almost immediately, testing accuracy lags behind, to then increase to 100% too once the grokking occurs.
+    """),
+        _fig
+    ])
+    return
+
+
+@app.cell
+def _(model):
+    _fig, _ax = plt.subplots()
+
+    _ax.plot(model.get_params()["_layer_stack._model_list.0._W.v"][:,::20], lw=0.4)
+    return
+
+
+@app.cell
+def _(model):
+    model.get_params()
+    return
+
+
+@app.cell
+def _():
     return
 
 
