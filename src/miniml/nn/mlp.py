@@ -1,5 +1,5 @@
 from jax import Array as JXArray
-from miniml.model import MiniMLModel
+from miniml.model import MiniMLModel, PredictMode
 from miniml.loss import (
     RegLossFunction,
     LNormRegularization,
@@ -11,6 +11,7 @@ import jax.numpy as jnp
 from miniml.nn.activations import relu, ActivationFunction, Activation
 from miniml.nn.linear import Linear
 from miniml.nn.compose import Stack
+from miniml.nn.dropout import Dropout
 
 
 class MLP(MiniMLModel):
@@ -21,6 +22,7 @@ class MLP(MiniMLModel):
         activation: ActivationFunction = relu,
         loss: LossFunction = squared_error_loss,
         reg_loss: RegLossFunction = LNormRegularization(2),
+        dropout: float = 0.0,
         dtype: DTypeLike = jnp.float32,
     ) -> None:
         """Multi-Layer Perceptron model.
@@ -57,10 +59,25 @@ class MLP(MiniMLModel):
             )
             if i < self._n - 1:
                 layers.append(Activation(activation))
+                if dropout > 0.0:
+                    layers.append(Dropout(rate=dropout))
 
         self._layer_stack = Stack(layers)
 
         super().__init__(loss=loss)
 
-    def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
-        return self._layer_stack._predict_kernel(X, buffer)
+    def _predict_kernel(
+        self,
+        X: JXArray,
+        buffer: JXArray,
+        rng_key: JXArray | None = None,
+        mode: PredictMode = PredictMode.INFERENCE,
+        **predict_kwargs,
+    ) -> JXArray:
+        return self._layer_stack._predict_kernel(
+            X,
+            buffer,
+            rng_key=rng_key,
+            mode=mode,
+            **predict_kwargs,
+        )

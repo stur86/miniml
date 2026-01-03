@@ -1,7 +1,8 @@
 from jax import Array
+import jax
 import jax.numpy as jnp
 from typing import Literal
-from miniml.model import MiniMLModel, MiniMLModelList
+from miniml.model import MiniMLModel, MiniMLModelList, PredictMode
 from miniml.loss import LossFunction
 
 
@@ -18,7 +19,14 @@ class Identity(MiniMLModel):
         self._scale = scale
         super().__init__()
 
-    def _predict_kernel(self, X: Array, buffer: Array) -> Array:
+    def _predict_kernel(
+        self,
+        X: Array,
+        buffer: Array,
+        rng_key: Array | None = None,
+        mode: PredictMode = PredictMode.INFERENCE,
+        **predict_kwargs,
+    ) -> Array:
         return X * self._scale
 
 class Take(MiniMLModel):
@@ -36,7 +44,14 @@ class Take(MiniMLModel):
         self._axis = axis
         super().__init__()
 
-    def _predict_kernel(self, X: Array, buffer: Array) -> Array:
+    def _predict_kernel(
+        self,
+        X: Array,
+        buffer: Array,
+        rng_key: Array | None = None,
+        mode: PredictMode = PredictMode.INFERENCE,
+        **predict_kwargs,
+    ) -> Array:
         return jnp.take(X, indices=self._indices, axis=self._axis)
 
 class Stack(MiniMLModel):
@@ -59,9 +74,25 @@ class Stack(MiniMLModel):
         self._model_list = MiniMLModelList(models)
         super().__init__(loss=loss)
 
-    def _predict_kernel(self, X: Array, buffer: Array) -> Array:
+    def _predict_kernel(
+        self,
+        X: Array,
+        buffer: Array,
+        rng_key: Array | None = None,
+        mode: PredictMode = PredictMode.INFERENCE,
+        **predict_kwargs,
+    ) -> Array:
         for model in self._model_list.contents:
-            X = model._predict_kernel(X, buffer)
+            rng_key, subkey = (
+                jax.random.split(rng_key) if rng_key is not None else (None, None)
+            )
+            X = model._predict_kernel(
+                X,
+                buffer,
+                rng_key=subkey,
+                mode=mode,
+                **predict_kwargs,
+            )
         return X
 
 
@@ -98,18 +129,77 @@ class Parallel(MiniMLModel):
             raise ValueError(f"Invalid mode '{mode}'. Choose 'sum' or 'concat'.")
 
         super().__init__(loss=loss)
+        
+    def _iter_predictf(
+        self,
+        X: Array,
+        buffer: Array,
+        rng_key: Array | None,
+        mode: PredictMode,
+        **predict_kwargs,
+    ) -> list[Array]:
+        outputs = []
+        for model in self._model_list.contents:
+            rng_key, subkey = (
+                jax.random.split(rng_key) if rng_key is not None else (None, None)
+            )
+            outputs.append(
+                model._predict_kernel(
+                    X,
+                    buffer,
+                    rng_key=subkey,
+                    mode=mode,
+                    **predict_kwargs,
+                )
+            )
+        return outputs
 
-    def _predictf_sum(self, X: Array, buffer: Array) -> Array:
-        outputs = [
-            model._predict_kernel(X, buffer) for model in self._model_list.contents
-        ]
+    def _predictf_sum(
+        self,
+        X: Array,
+        buffer: Array,
+        rng_key: Array | None,
+        mode: PredictMode,
+        **predict_kwargs,
+    ) -> Array:
+        outputs = self._iter_predictf(
+            X,
+            buffer,
+            rng_key=rng_key,
+            mode=mode,
+            **predict_kwargs,
+        )
         return jnp.sum(jnp.stack(outputs), axis=0)
 
-    def _predictf_concat(self, X: Array, buffer: Array) -> Array:
-        outputs = [
-            model._predict_kernel(X, buffer) for model in self._model_list.contents
-        ]
+    def _predictf_concat(
+        self,
+        X: Array,
+        buffer: Array,
+        rng_key: Array | None,
+        mode: PredictMode,
+        **predict_kwargs,
+    ) -> Array:
+        outputs = self._iter_predictf(
+            X,
+            buffer,
+            rng_key=rng_key,
+            mode=mode,
+            **predict_kwargs,
+        )
         return jnp.concatenate(outputs, axis=self._concat_axis)
 
-    def _predict_kernel(self, X: Array, buffer: Array) -> Array:
-        return self._predict_func(X, buffer)
+    def _predict_kernel(
+        self,
+        X: Array,
+        buffer: Array,
+        rng_key: Array | None = None,
+        mode: PredictMode = PredictMode.INFERENCE,
+        **predict_kwargs,
+    ) -> Array:
+        return self._predict_func(
+            X,
+            buffer,
+            rng_key=rng_key,
+            mode=mode,
+            **predict_kwargs,
+        )

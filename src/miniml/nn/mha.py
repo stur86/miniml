@@ -1,6 +1,6 @@
 from typing import Any
 from jax import numpy as jnp, Array as JxArray
-from miniml.model import MiniMLModel
+from miniml.model import MiniMLModel, PredictMode
 from miniml.nn.linear import Linear
 from miniml.param import MiniMLParam, DTypeLike, MiniMLError
 from miniml.loss import (
@@ -9,6 +9,7 @@ from miniml.loss import (
     squared_error_loss,
     LNormRegularization,
 )
+from miniml.random import RandomMask
 
 _MultiHeadArg = JxArray | tuple[JxArray, JxArray, JxArray]
 
@@ -20,6 +21,7 @@ class MultiHeadAttention(MiniMLModel):
     _num_heads: int
     _kdim: int
     _vdim: int
+    _dropout: float
 
     def __init__(
         self,
@@ -29,6 +31,7 @@ class MultiHeadAttention(MiniMLModel):
         vdim: int | None = None,
         loss: LossFunction = squared_error_loss,
         reg_loss: RegLossFunction = LNormRegularization(2),
+        dropout: float = 0.0,
         dtype: DTypeLike = jnp.float32,
     ) -> None:
         r"""Initialize the MultiHeadAttention model.
@@ -67,6 +70,7 @@ class MultiHeadAttention(MiniMLModel):
             vdim (int | None, optional): Dimension of the value vectors. Defaults to None, which sets it equal to embed_dim.
             loss (LossFunction, optional): Loss function for the model. Defaults to squared_error_loss.
             reg_loss (RegLossFunction, optional): Regularization function for the weights. Defaults to LNormRegularization(2).
+            dropout (float, optional): Dropout rate for attention weights. Defaults to 0.0.
             dtype (DTypeLike, optional): Data type for the model parameters. Defaults to jnp.float32.
         """
 
@@ -75,6 +79,7 @@ class MultiHeadAttention(MiniMLModel):
         self._embed_dim = embed_dim
         self._num_heads = num_heads
         self._head_dim = embed_dim // num_heads
+        self._dropout = dropout
         if self._head_dim * num_heads != embed_dim:
             raise MiniMLError("embed_dim must be divisible by num_heads.")
 
@@ -134,7 +139,13 @@ class MultiHeadAttention(MiniMLModel):
         return super().predict(X, **predict_kwargs)  # type: ignore
 
     def _predict_kernel(
-        self, X: _MultiHeadArg, buffer: JxArray, attn_mask: JxArray | None = None
+        self,
+        X: _MultiHeadArg,
+        buffer: JxArray,
+        rng_key: JxArray | None = None,
+        mode: PredictMode = PredictMode.INFERENCE,
+        attn_mask: JxArray | None = None,
+        **predict_kwargs: Any,
     ) -> JxArray:
         is_self_attn = not isinstance(X, tuple)
         if self.homogeneous and is_self_attn:
@@ -169,10 +180,28 @@ class MultiHeadAttention(MiniMLModel):
         attn_weights = jnp.exp(
             attn_scores - jnp.max(attn_scores, axis=-1, keepdims=True)
         )
+        
+        # If needed, apply dropout to attention weights
+        if mode == PredictMode.TRAINING and self._dropout > 0.0:
+            if rng_key is None:
+                raise MiniMLError(
+                    "rng_key must be provided during training when dropout is enabled."
+                )
+            dropout_mask = RandomMask(
+                attn_weights.shape, p=1.0 - self._dropout, dtype=attn_weights.dtype
+            ).generate(rng_key)
+            attn_weights = attn_weights * dropout_mask
+        
         attn_weights = attn_weights / jnp.sum(attn_weights, axis=-1, keepdims=True)
         attn_output_heads = jnp.einsum("...qhk,...khd->...qhd", attn_weights, Xv_heads)
         attn_output = attn_output_heads.reshape(
             attn_output_heads.shape[:-2] + (self._embed_dim,)
         )
 
-        return self._out_proj._predict_kernel(attn_output, buffer)
+        return self._out_proj._predict_kernel(
+            attn_output,
+            buffer,
+            rng_key=rng_key,
+            mode=mode,
+            **predict_kwargs,
+        )

@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.16.0"
+__generated_with = "0.17.8"
 app = marimo.App(width="medium")
 
 
@@ -66,14 +66,12 @@ def _(MLP, np, train_X, train_y):
 
 @app.cell
 def _(classification_accuracy, mo, nnm, test_X, test_y, train_X, train_y):
-    mo.md(
-        f"""
+    mo.md(f"""
     | Set       |               Accuracy                                       |
     |-----------|--------------------------------------------------------------|
     | **Train** | {classification_accuracy(train_y, nnm.predict(train_X)):.2%} |
     | **Test**  |  {classification_accuracy(test_y, nnm.predict(test_X)):.2%}  |
-    """
-    )
+    """)
     return
 
 

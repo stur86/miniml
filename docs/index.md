@@ -14,7 +14,7 @@ class LinearModel(MiniMLModel):
         self.b = MiniMLParam((n_out,))
         super().__init__()
 
-    def _predict_kernel(self, X, buffer):
+    def _predict_kernel(self, X, buffer, rng_key=None, mode=PredictMode.INFERENCE):
         return X@self.A(buffer)+self.b(buffer)
         
 lin_model = LinearModel(X.shape[1], y.shape[1])

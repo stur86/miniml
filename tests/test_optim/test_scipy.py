@@ -26,7 +26,8 @@ from miniml.optim.base import MiniMLOptimResult
 )
 def test_scipy_optimizer_init(method: str) -> None:
     # Create a dummy function
-    def dummy_objective(x: JxArray) -> JxArray:
+    def dummy_objective(x: JxArray, rng_key: JxArray | None) -> JxArray:
+        assert rng_key is None  # For this test, we don't use the rng_key
         return (x**2).sum()
 
     if method == "Unsupported-Method":

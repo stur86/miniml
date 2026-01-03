@@ -5,7 +5,7 @@ import jax
 from jax import Array as JXArray
 import jax.numpy as jnp
 from miniml.loss import LossFunction, squared_error_loss
-from miniml.model import MiniMLModel
+from miniml.model import MiniMLModel, PredictMode
 from miniml.param import MiniMLParam, MiniMLParamList
 from miniml.nn.rbf import RBFunction, gaussian_rbf
 from miniml.nn.ortho import CayleyMatrix
@@ -88,7 +88,14 @@ class RBFLayer(MiniMLModel):
         # i = centers, n = batch, k = input features, j = projected features
         return jnp.einsum("ijk,nik->nij", pmats, X)
 
-    def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+    def _predict_kernel(
+        self,
+        X: JXArray,
+        buffer: JXArray,
+        rng_key: JXArray | None = None,
+        mode: PredictMode = PredictMode.INFERENCE,
+        **predict_kwargs,
+    ) -> JXArray:
         X0 = self._X0(buffer)  # (centers, n_in)
         # Translate inputs by centers
         X = X[:, None, :] - X0[None, :, :]  # (n, centers, n_in)

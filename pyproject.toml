@@ -1,11 +1,11 @@
 [project]
 name = "miniml-jax"
-version = "0.6.0"
+version = "0.7.0"
 description = "MiniML - a minimalistic ML framework"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "jax>=0.7.1",
+    "jax>=0.8.0",
     "numpy>=2.3.4",
     "scipy>=1.16.1",
     "typing-extensions>=4.15.0 ; python_full_version < '3.11'",
@@ -14,6 +14,11 @@ dependencies = [
 [project.urls]
 Documentation = "https://stur86.github.io/miniml/"
 Repository = "https://github.com/stur86/miniml"
+
+[project.optional-dependencies]
+cuda = [
+    "jax[cuda]>=0.8.0",
+]
 
 [build-system]
 requires = ["uv_build>=0.8.11,<0.9.0"]

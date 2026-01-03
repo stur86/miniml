@@ -1,6 +1,6 @@
 from jax import Array as JXArray
 import jax.numpy as jnp
-from miniml.model import MiniMLModel
+from miniml.model import MiniMLModel, PredictMode
 from miniml.param import MiniMLParam
 
 
@@ -26,7 +26,14 @@ class Embedding(MiniMLModel):
         self._use_unknown = use_unknown
         super().__init__()
 
-    def _predict_kernel(self, X: JXArray, buffer: JXArray) -> JXArray:
+    def _predict_kernel(
+        self,
+        X: JXArray,
+        buffer: JXArray,
+        rng_key: JXArray | None = None,
+        mode: PredictMode = PredictMode.INFERENCE,
+        **predict_kwargs,
+    ) -> JXArray:
         embd = self._embeddings(buffer)
         # Clipping upwards guarantees we use the unknown embedding for out-of-vocab indices
         # if we are using that feature

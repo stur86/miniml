@@ -4,7 +4,9 @@ import numpy as np
 from miniml.loss import (
     LNormRegularization,
     cross_entropy_loss,
+    stablemax,
     CrossEntropyLogLoss,
+    CrossEntropyStableMaxLogLoss,
     squared_error_loss,
     binary_match_loss,
 )
@@ -61,3 +63,28 @@ def test_binary_match_loss() -> None:
     y_exact_logits = jnp.where(y == 1, big_logit, -big_logit)
 
     assert np.isclose(binary_match_loss(y, y_exact_logits), 0.0)
+
+def test_stablemax():
+    from miniml.loss import _stablemax_elem
+    
+    x = jnp.array([1, 2, -1.5])
+    s = _stablemax_elem(x)
+    
+    assert jnp.array_equal(s, jnp.array([2, 3, 1/2.5]))
+    
+    # Now full stablemax
+    smx = stablemax(x)
+    
+    assert jnp.array_equal(smx, s / s.sum())
+
+def test_cross_entropy_stablemax_log_loss() -> None:
+    y_true = jnp.array([[0, 1], [1, 0], [0.7, 0.3]])
+    y_logits = jnp.array([[0, 4], [2, -1], [1, 2]])
+    
+    loss = CrossEntropyStableMaxLogLoss(zero_ref=False)(y_true, y_logits)
+    
+    # Manually compute expected loss using stablemax
+    y_pred = stablemax(y_logits)
+    expected_loss = -jnp.sum(y_true * jnp.log(y_pred))
+    
+    assert np.isclose(loss, expected_loss)

@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.16.0"
+__generated_with = "0.17.8"
 app = marimo.App(width="medium")
 
 
@@ -13,7 +13,7 @@ def _():
     from miniml.nn.rbf import gaussian_rbf, PolyharmonicRBF, inverse_quadratic_rbf
     from miniml.loss import CrossEntropyLogLoss
     import matplotlib.pyplot as plt
-    return CrossEntropyLogLoss, RBFLayer, gaussian_rbf, jnp, np, plt
+    return CrossEntropyLogLoss, RBFLayer, gaussian_rbf, jnp, mo, np, plt
 
 
 @app.cell
@@ -48,7 +48,7 @@ def _(jnp, np):
         return X, y
 
     # Example usage
-    X, y = make_moons(n_samples=200, noise=0.1, random_state=42)
+    X, y = make_moons(n_samples=200, noise=0.2, random_state=42)
     yclass = np.zeros((len(y), 2))
     yclass[np.arange(len(yclass)), y] = 1
     return X, y, yclass
@@ -61,12 +61,13 @@ def _(CrossEntropyLogLoss, RBFLayer, X, gaussian_rbf, yclass):
     rbfm.randomize(0)
 
     res = rbfm.fit(X, yclass)
-    return rbfm, res
+    ypred = rbfm.predict(X)
+    return rbfm, ypred
 
 
 @app.cell
-def _(X, np, plt, rbfm, y):
-    _xgrid = np.linspace(-3, 3, 50)
+def _(X, np, plt, rbfm, ypred):
+    _xgrid = np.linspace(-3, 3, 100)
     _xgrid = np.meshgrid(_xgrid, _xgrid)
 
     _xy = np.array(_xgrid).reshape((2,-1)).T
@@ -75,7 +76,7 @@ def _(X, np, plt, rbfm, y):
     _fig, _ax = plt.subplots()
 
     _ax.pcolormesh(_xgrid[0], _xgrid[1], _z.reshape((len(_xgrid[0]), -1)), cmap="Blues", vmax=1, vmin=0)
-    _ax.scatter(X[:,0], X[:,1], c=y)
+    _ax.scatter(X[:,0], X[:,1], c=(ypred < 0))
     _ax.set_xlim(-3, 3)
     _ax.set_ylim(-3, 3)
 
@@ -86,8 +87,8 @@ def _(X, np, plt, rbfm, y):
 
 
 @app.cell
-def _(res):
-    res
+def _(X, mo, np, rbfm, y):
+    mo.md(f"Prediction accuracy: {np.mean((rbfm.predict(X)[:,0] < 0) == y):.2%}")
     return
 
 

@@ -38,6 +38,12 @@ Simply install this package from PyPi:
 pip install miniml-jax
 ```
 
+or to use the CUDA-enabled version of Jax:
+
+```bash
+pip install miniml-jax[cuda]
+```
+
 ## Usage
 
 The two core types are `MiniMLParam` and `MiniMLModel`. There are also `MiniMLParamList` and `MiniMLModelList` containers to store multiple of either inside.
