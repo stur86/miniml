@@ -1726,7 +1726,7 @@ examples = [
 
 [package.metadata]
 requires-dist = [
-    { name = "jax", specifier = ">=0.7.1" },
+    { name = "jax", specifier = ">=0.8.0" },
     { name = "jax", extras = ["cuda"], marker = "extra == 'cuda'", specifier = ">=0.8.0" },
     { name = "numpy", specifier = ">=2.3.4" },
     { name = "scipy", specifier = ">=1.16.1" },
