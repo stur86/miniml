@@ -7,6 +7,9 @@ from miniml.optim.base import (
     OptimizationMethods,
     DerivRequire,
 )
+from typing import Generator
+from contextlib import contextmanager
+from dataclasses import dataclass
 
 def _adam_grad_apply_weight_decay(grad, weight_decay, x):
     return grad + weight_decay * x
@@ -21,12 +24,40 @@ def _adamw_update_step(update, weight_decay, x):
     return update + weight_decay * x  # Decoupled weight decay in AdamW
 
 
+@dataclass
+class AdamState:
+    """Wrapper for persistent Adam optimizer state.
+
+    Attributes:
+        m: First moment estimates.
+        v: Second moment estimates.
+        flag: Stopping flag (local iteration index where tolerance was met,
+            or 0.0 if not yet met).
+        iteration: Total number of iterations performed so far (global count).
+    """
+
+    m: JxArray
+    v: JxArray
+    flag: float
+    iteration: int
+
+    def compatible(self, length: int) -> bool:
+        """Return True if the state is compatible with a parameter vector
+        of the given length.
+        """
+        return self.m.size == length and self.v.size == length
+
+
 class AdamBaseOptimizer(MiniMLOptimizer):
     """Base class for Adam-style optimizers with optional weight decay.
 
     This class can implement classical Adam or decoupled-weight-decay AdamW
     behaviour depending on the ``decouple_weight_decay`` flag.
     """
+    
+    # State persistence
+    _persist: bool = False
+    _state: AdamState | None = None
 
     def __init__(
         self,
@@ -110,21 +141,51 @@ class AdamBaseOptimizer(MiniMLOptimizer):
             return x, m, v
         
         self._update_impl = _update_impl
+    
+    def _clear_state(self) -> None:
+        """Clear any persisted optimizer state."""
+        self._state = None
+
+    def _get_state(self, x: JxArray) -> AdamState:
+        """Get the current optimizer state.
+
+        If no compatible state is persisted, initialize to zeros.
+
+        Args:
+            x (JxArray): Current parameters.
+
+        Returns:
+            AdamState: Wrapper containing first/second moments, flag and
+                global iteration count.
+        """
+        n = x.shape[0]
+        if self._state is None or (not self._state.compatible(n)):
+            # Drop any incompatible state and start fresh
+            self._clear_state()
+            m = jnp.zeros_like(x)
+            v = jnp.zeros_like(x)
+            return AdamState(m=m, v=v, flag=0.0, iteration=0)
+
+        return self._state
 
     def _minimize_kernel(
         self, x0: JxArray, methods: OptimizationMethods,
         seed: int | None = None,
     ) -> MiniMLOptimResult:
         n = x0.shape[0]
-        m = jnp.zeros_like(x0)
-        v = jnp.zeros_like(x0)
         x = x0
+        state = self._get_state(x)
+        m = state.m
+        v = state.v
+                
         assert (
             methods.jac is not None
         ), "Jacobian function must be provided for Adam optimizer."
         gradfun = methods.jac
 
         def update_fn(x, m, v, t, update_key):
+            # Use a global step index for bias correction that accounts for
+            # any iterations performed in previous persistent calls.
             return self._update_impl(
                 x,
                 m,
@@ -167,15 +228,33 @@ class AdamBaseOptimizer(MiniMLOptimizer):
         if seed is not None:
             prng_key = jax.random.PRNGKey(seed)
 
-        state = (jnp.concatenate([x, m, v, jnp.array([0.0])], axis=0), prng_key)
+        # Start with a fresh local stopping flag each call; global iteration
+        # count is tracked separately in the persistent state wrapper.
+        state_vec = jnp.concatenate([x, m, v, jnp.array([state.flag])], axis=0)
+        loop_state = (state_vec, prng_key)
 
+        iter_start = state.iteration + 1
+        iter_end = state.iteration + self._maxiter + 1
         out_state, last_rng_key = jax.lax.fori_loop(
-            1, self._maxiter + 1, adam_step_jit, state
+            iter_start, iter_end, adam_step_jit, loop_state
         )
 
         success = out_state[-1] > 0
         n_iters = int(out_state[-1]) if success else self._maxiter
-        x_opt = out_state[:-1][:n]
+        x_opt = out_state[:n]
+        
+        if self._persist:
+            # Save the optimizer state for future calls
+            m_opt = out_state[n : 2 * n]
+            v_opt = out_state[2 * n : 3 * n]
+            flag_opt = float(out_state[-1]) if success else 0.0
+            total_iteration = iter_end - 1
+            self._state = AdamState(
+                m=m_opt,
+                v=v_opt,
+                flag=flag_opt,
+                iteration=total_iteration,
+            )
 
         return MiniMLOptimResult(
             x_opt=x_opt,
@@ -189,6 +268,18 @@ class AdamBaseOptimizer(MiniMLOptimizer):
             n_jacobian_evaluations=n_iters,
             n_hessian_evaluations=None,
         )
+    
+    @contextmanager
+    def persistent(self) -> Generator["AdamBaseOptimizer", None, None]:
+        """Open a context in which optimizer state is persisted across multiple
+        minimize calls.
+        """
+        self._persist = True
+        try:
+            yield self
+        finally:
+            self._persist = False
+            self._clear_state()
 
 
 class AdamOptimizer(AdamBaseOptimizer):

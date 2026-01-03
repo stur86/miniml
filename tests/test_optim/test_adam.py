@@ -87,3 +87,40 @@ def test_adam_and_adamw_match_when_no_weight_decay() -> None:
     assert isinstance(result_adamw, MiniMLOptimResult)
     assert jnp.allclose(result_adam.x_opt, result_adamw.x_opt, atol=1e-9)
     assert result_adam.success == result_adamw.success
+
+def test_adam_persistent_state() -> None:
+    # Create a dummy function
+    def dummy_objective(x, _=None):
+        return (x**2).sum()
+
+    tol = 1e-12
+    optimizer = AdamOptimizer(alpha=0.01, tol=tol, maxiter=1)
+    x0 = jnp.ones(5, dtype=jnp.float32)
+
+    with optimizer.persistent() as opt:
+        assert opt._persist is True
+        assert opt._state is None
+        result1 = opt(dummy_objective, x0)
+        assert opt._state is not None
+        state1 = opt._state
+        assert state1 is not None
+        # Persisted state should match the parameter size and record iterations
+        assert state1.compatible(len(x0))
+        assert state1.iteration == 1
+        # A second call with persistence should advance the iteration counter
+        result2 = opt(dummy_objective, result1.x_opt)
+        state2 = opt._state
+        assert state2 is not None
+        assert state2.iteration == 2
+
+    assert optimizer._state is None
+    assert optimizer._persist is False
+    assert isinstance(result1, MiniMLOptimResult)
+    assert isinstance(result2, MiniMLOptimResult)
+    assert not jnp.allclose(result1.x_opt, result2.x_opt, atol=1e-9)
+
+    # Create an optimizer which should do twice as many iterations in a single call
+    optimizer2 = AdamOptimizer(alpha=0.01, tol=tol, maxiter=2)
+    result_full = optimizer2(dummy_objective, x0)
+    
+    assert jnp.allclose(result2.x_opt, result_full.x_opt, atol=1e-9)
