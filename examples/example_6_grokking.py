@@ -140,7 +140,7 @@ def _(accuracy_curves, loss_curves, loss_iters):
         _ax[0].set_xlabel("Iteration")
         _ax[0].set_ylabel("Loss")
         _ax[0].legend()
-    
+
         _ax[1].plot(loss_iters, accuracy_curves[:,0]*100.0, label="Train")
         _ax[1].plot(loss_iters, accuracy_curves[:,1]*100.0, label="Test")
         _ax[1].set_xlabel("Iteration")
@@ -155,25 +155,6 @@ def _(accuracy_curves, loss_curves, loss_iters):
     """),
         _fig
     ])
-    return
-
-
-@app.cell
-def _(model):
-    _fig, _ax = plt.subplots()
-
-    _ax.plot(model.get_params()["_layer_stack._model_list.0._W.v"][:,::20], lw=0.4)
-    return
-
-
-@app.cell
-def _(model):
-    model.get_params()
-    return
-
-
-@app.cell
-def _():
     return
 
 
