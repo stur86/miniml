@@ -106,3 +106,36 @@ def test_param_list():
     p1.bind(0, bufc)
     p2.bind(p1.size, bufc)
     bufc._buffer = jnp.ones((p1.size + p2.size,), dtype=jnp.float32)
+
+
+def test_reg_scale_property():
+    # Getter returns the value set at construction
+    p = MiniMLParam((3, 2), reg_scale=0.5)
+    assert p.reg_scale == 0.5
+
+def test_reg_scale_setter():
+    p = MiniMLParam((3, 2))
+    p.reg_scale = 2.0
+    assert p.reg_scale == 2.0
+
+def test_reg_scale_coercion():
+    p = MiniMLParam((3, 2))
+    # int coerced to float
+    p.reg_scale = 3
+    assert p.reg_scale == 3.0
+    assert isinstance(p.reg_scale, float)
+    # JAX scalar coerced to float
+    import jax.numpy as jnp
+    p.reg_scale = jnp.array(0.1)
+    assert isinstance(p.reg_scale, float)
+
+def test_reg_scale_invalid():
+    p = MiniMLParam((3, 2))
+    with pytest.raises((TypeError, ValueError)):
+        p.reg_scale = "not_a_number"
+
+def test_reg_scale_constructor_coercion():
+    # int passed at construction should be stored as float
+    p = MiniMLParam((3, 2), reg_scale=2)
+    assert isinstance(p.reg_scale, float)
+    assert p.reg_scale == 2.0

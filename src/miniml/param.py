@@ -64,7 +64,7 @@ class MiniMLParam:
         self._dtype_name = _supported_types.get_inverse(dtype)  # type: ignore
         self._size = int(np.prod(shape))
         self._reg_loss = reg_loss
-        self._reg_scale = reg_scale
+        self.reg_scale = reg_scale
 
     @property
     def shape(self) -> tuple[int, ...]:
@@ -85,6 +85,15 @@ class MiniMLParam:
     def dtype_name(self) -> str:
         """The name of the data type of the parameter."""
         return self._dtype_name
+
+    @property
+    def reg_scale(self) -> float:
+        """The regularization scale factor for this parameter."""
+        return self._reg_scale
+
+    @reg_scale.setter
+    def reg_scale(self, value: float) -> None:
+        self._reg_scale = float(value)
 
     def _validate_buffer(self, i0: int, buf: JXArray) -> None:
         """Validate that a buffer and starting index pair
