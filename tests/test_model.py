@@ -574,10 +574,11 @@ def test_set_regularization_scale_glob_all():
 
 
 def test_set_regularization_scale_skips_no_reg():
-    # c has no regularizer — setting "*" should not crash, c.reg_scale stays 1.0
+    # c has no regularizer — it should be silently skipped, reg_scale unchanged
     m = _make_reg_model()
+    m.c.reg_scale = 42.0  # sentinel value, not the default
     m.set_regularization_scale("*", 0.3)
-    assert m.c.reg_scale == 1.0  # unchanged, silently skipped
+    assert m.c.reg_scale == 42.0  # still the sentinel — was not touched
 
 
 def test_set_regularization_scale_no_match_warns():
@@ -586,6 +587,7 @@ def test_set_regularization_scale_no_match_warns():
         warnings.simplefilter("always")
         m.set_regularization_scale("nonexistent.*", 0.5)
         assert len(w) == 1
+        assert w[0].category is UserWarning
         assert "nonexistent.*" in str(w[0].message)
 
 
@@ -595,6 +597,7 @@ def test_set_regularization_scale_matched_but_no_reg_warns():
         warnings.simplefilter("always")
         m.set_regularization_scale("c.v", 0.5)  # c has no regularizer
         assert len(w) == 1
+        assert w[0].category is UserWarning
         assert "c.v" in str(w[0].message)
 
 

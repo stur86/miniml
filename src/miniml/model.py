@@ -691,11 +691,13 @@ class MiniMLModel(ABC):
         if not any_reg_updated:
             if not any_path_matched:
                 warnings.warn(
-                    f"set_regularization_scale('{path}'): pattern matched no parameter paths."
+                    f"set_regularization_scale('{path}'): pattern matched no parameter paths.",
+                    stacklevel=2,
                 )
             else:
                 warnings.warn(
-                    f"set_regularization_scale('{path}'): pattern matched parameter(s) but none have a regularizer."
+                    f"set_regularization_scale('{path}'): pattern matched parameter(s) but none have a regularizer.",
+                    stacklevel=2,
                 )
 
 
