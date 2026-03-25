@@ -16,6 +16,8 @@ from miniml.optim.scipy import ScipyOptimizer
 
 # Import Self from typing or typing_extensions based on Python version
 import sys
+import fnmatch
+import warnings
 
 if sys.version_info >= (3, 11):
     from typing import Self
@@ -204,6 +206,15 @@ class MiniMLModel(ABC):
             list[str]: A list of parameter names.
         """
         return [p.path for p in self._params]
+    
+    @property
+    def loss_function(self) -> LossFunction | None:
+        """Get the loss function of the model.
+
+        Returns:
+            LossFunction | None: The loss function, or None if not set.
+        """
+        return self._loss_f
 
     def bind(self) -> None:
         """Bind the model parameters to a contiguous buffer."""
@@ -640,6 +651,54 @@ class MiniMLModel(ABC):
 
     def _get_inner_params(self) -> list[MiniMLParamRef]:
         return self._params
+
+    def get_regularization_scales(self) -> dict[str, float]:
+        """Return a dict of {param_path: reg_scale} for all regularized parameters.
+
+        Parameters without a regularizer are excluded. Returns an empty dict if
+        the model has no regularized parameters.
+
+        Returns:
+            dict[str, float]: Mapping of parameter path to its current reg_scale.
+        """
+        return {
+            ref.path: ref.param.reg_scale
+            for ref in self._params
+            if ref.param._reg_loss is not None
+        }
+
+    def set_regularization_scale(self, path: str, value: float) -> None:
+        """Set the regularization scale for all regularized parameters matching a glob pattern.
+
+        Uses fnmatch glob semantics: '*' matches any characters including '.', so
+        '*W.v' matches both 'W.v' and 'layer.W.v'. Parameters without a
+        regularizer are silently skipped. Emits a warning if no regularized
+        parameters were updated.
+
+        Args:
+            path (str): A glob pattern matched against parameter dot-paths
+                (e.g. 'W.v', '_layer.*', '*').
+            value (float): The new reg_scale value to set.
+        """
+        any_path_matched = False
+        any_reg_updated = False
+        for ref in self._params:
+            if fnmatch.fnmatch(ref.path, path):
+                any_path_matched = True
+                if ref.param._reg_loss is not None:
+                    ref.param.reg_scale = value
+                    any_reg_updated = True
+        if not any_reg_updated:
+            if not any_path_matched:
+                warnings.warn(
+                    f"set_regularization_scale('{path}'): pattern matched no parameter paths.",
+                    stacklevel=2,
+                )
+            else:
+                warnings.warn(
+                    f"set_regularization_scale('{path}'): pattern matched parameter(s) but none have a regularizer.",
+                    stacklevel=2,
+                )
 
 
 class MiniMLModelList:

@@ -20,3 +20,6 @@ site/
 
 # Test data
 tests/test_nn/data/*.npz
+
+# CLAUDE-related files
+docs/superpowers/*
