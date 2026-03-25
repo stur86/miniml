@@ -16,6 +16,8 @@ from miniml.optim.scipy import ScipyOptimizer
 
 # Import Self from typing or typing_extensions based on Python version
 import sys
+import fnmatch
+import warnings
 
 if sys.version_info >= (3, 11):
     from typing import Self
@@ -649,6 +651,21 @@ class MiniMLModel(ABC):
 
     def _get_inner_params(self) -> list[MiniMLParamRef]:
         return self._params
+
+    def get_regularization_scales(self) -> dict[str, float]:
+        """Return a dict of {param_path: reg_scale} for all regularized parameters.
+
+        Parameters without a regularizer are excluded. Returns an empty dict if
+        the model has no regularized parameters.
+
+        Returns:
+            dict[str, float]: Mapping of parameter path to its current reg_scale.
+        """
+        return {
+            ref.path: ref.param.reg_scale
+            for ref in self._params
+            if ref.param._reg_loss is not None
+        }
 
 
 class MiniMLModelList:

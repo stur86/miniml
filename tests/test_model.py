@@ -510,3 +510,34 @@ def test_pre_fit():
     model.fit(X, y)
     assert jnp.isclose(model.p1()[0], 0.0, atol=1e-5)
     assert jnp.isclose(model.p2()[0], y.mean(), atol=1e-5)
+
+
+def test_get_regularization_scales_basic():
+    class RegModel(MiniMLModel):
+        def __init__(self):
+            self.W = MiniMLParam((2, 2), reg_loss=LNormRegularization(p=2), reg_scale=1.0)
+            self.b = MiniMLParam((2,), reg_loss=LNormRegularization(p=2), reg_scale=0.5)
+            self.c = MiniMLParam((2,))  # no regularizer
+            super().__init__()
+
+        def _predict_kernel(self, X, buffer, rng_key=None, mode=PredictMode.INFERENCE, **kw):
+            return self.W(buffer) @ X + self.b(buffer)
+
+    m = RegModel()
+    scales = m.get_regularization_scales()
+    assert scales == {"W.v": 1.0, "b.v": 0.5}
+    # c has no regularizer — must not appear
+    assert "c.v" not in scales
+
+
+def test_get_regularization_scales_empty():
+    class NoRegModel(MiniMLModel):
+        def __init__(self):
+            self.W = MiniMLParam((2, 2))
+            super().__init__()
+
+        def _predict_kernel(self, X, buffer, rng_key=None, mode=PredictMode.INFERENCE, **kw):
+            return self.W(buffer) @ X
+
+    m = NoRegModel()
+    assert m.get_regularization_scales() == {}
