@@ -667,6 +667,37 @@ class MiniMLModel(ABC):
             if ref.param._reg_loss is not None
         }
 
+    def set_regularization_scale(self, path: str, value: float) -> None:
+        """Set the regularization scale for all regularized parameters matching a glob pattern.
+
+        Uses fnmatch glob semantics: '*' matches any characters including '.', so
+        '*W.v' matches both 'W.v' and 'layer.W.v'. Parameters without a
+        regularizer are silently skipped. Emits a warning if no regularized
+        parameters were updated.
+
+        Args:
+            path (str): A glob pattern matched against parameter dot-paths
+                (e.g. 'W.v', '_layer.*', '*').
+            value (float): The new reg_scale value to set.
+        """
+        any_path_matched = False
+        any_reg_updated = False
+        for ref in self._params:
+            if fnmatch.fnmatch(ref.path, path):
+                any_path_matched = True
+                if ref.param._reg_loss is not None:
+                    ref.param.reg_scale = value
+                    any_reg_updated = True
+        if not any_reg_updated:
+            if not any_path_matched:
+                warnings.warn(
+                    f"set_regularization_scale('{path}'): pattern matched no parameter paths."
+                )
+            else:
+                warnings.warn(
+                    f"set_regularization_scale('{path}'): pattern matched parameter(s) but none have a regularizer."
+                )
+
 
 class MiniMLModelList:
     """A list of MiniMLModels."""

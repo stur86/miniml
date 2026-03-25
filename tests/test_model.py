@@ -1,4 +1,5 @@
 from pathlib import Path
+import warnings
 import numpy as np
 import pytest
 import jax.numpy as jnp
@@ -541,3 +542,69 @@ def test_get_regularization_scales_empty():
 
     m = NoRegModel()
     assert m.get_regularization_scales() == {}
+
+
+def _make_reg_model():
+    """Helper: model with two regularized params and one unregularized."""
+    class RegModel(MiniMLModel):
+        def __init__(self):
+            self.W = MiniMLParam((2, 2), reg_loss=LNormRegularization(p=2), reg_scale=1.0)
+            self.b = MiniMLParam((2,), reg_loss=LNormRegularization(p=2), reg_scale=1.0)
+            self.c = MiniMLParam((2,))  # no regularizer
+            super().__init__()
+
+        def _predict_kernel(self, X, buffer, rng_key=None, mode=PredictMode.INFERENCE, **kw):
+            return self.W(buffer) @ X + self.b(buffer)
+
+    return RegModel()
+
+
+def test_set_regularization_scale_exact():
+    m = _make_reg_model()
+    m.set_regularization_scale("W.v", 0.25)
+    assert m.W.reg_scale == 0.25
+    assert m.b.reg_scale == 1.0  # unchanged
+
+
+def test_set_regularization_scale_glob_all():
+    m = _make_reg_model()
+    m.set_regularization_scale("*", 0.1)
+    assert m.W.reg_scale == 0.1
+    assert m.b.reg_scale == 0.1
+
+
+def test_set_regularization_scale_skips_no_reg():
+    # c has no regularizer — setting "*" should not crash, c.reg_scale stays 1.0
+    m = _make_reg_model()
+    m.set_regularization_scale("*", 0.3)
+    assert m.c.reg_scale == 1.0  # unchanged, silently skipped
+
+
+def test_set_regularization_scale_no_match_warns():
+    m = _make_reg_model()
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        m.set_regularization_scale("nonexistent.*", 0.5)
+        assert len(w) == 1
+        assert "nonexistent.*" in str(w[0].message)
+
+
+def test_set_regularization_scale_matched_but_no_reg_warns():
+    m = _make_reg_model()
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        m.set_regularization_scale("c.v", 0.5)  # c has no regularizer
+        assert len(w) == 1
+        assert "c.v" in str(w[0].message)
+
+
+def test_set_regularization_scale_updates_loss():
+    """reg_scale change is reflected in the next regularization_loss call."""
+    m = _make_reg_model()
+    m.bind()
+    m.randomize()
+    loss_before = float(m.regularization_loss())
+    m.set_regularization_scale("*", 0.0)
+    loss_after = float(m.regularization_loss())
+    assert loss_after == pytest.approx(0.0)
+    assert loss_before != pytest.approx(0.0)
