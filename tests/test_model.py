@@ -33,7 +33,7 @@ def test_model_basic(tmp_path: Path):
             self._M = MiniMLParam((5, 5))
             self._c = ConstantModel()
 
-            super().__init__()
+            super().__init__(loss=squared_error_loss)
 
         def _predict_kernel(
             self,
@@ -58,6 +58,7 @@ def test_model_basic(tmp_path: Path):
 
     assert len(m._params) == 3
     assert len(m._c._params) == 1
+    assert m.loss_function is squared_error_loss
 
     m.bind()
 

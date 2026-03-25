@@ -204,6 +204,15 @@ class MiniMLModel(ABC):
             list[str]: A list of parameter names.
         """
         return [p.path for p in self._params]
+    
+    @property
+    def loss_function(self) -> LossFunction | None:
+        """Get the loss function of the model.
+
+        Returns:
+            LossFunction | None: The loss function, or None if not set.
+        """
+        return self._loss_f
 
     def bind(self) -> None:
         """Bind the model parameters to a contiguous buffer."""
