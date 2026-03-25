@@ -37,6 +37,7 @@ class MiniMLParam:
     _dtype_name: str
     _size: int
     _reg_loss: RegLossFunction | None = None
+    _reg_scale: float
 
     _bufc: BufferContainer | None = None
     _buf_i0: int = -1

@@ -113,10 +113,12 @@ def test_reg_scale_property():
     p = MiniMLParam((3, 2), reg_scale=0.5)
     assert p.reg_scale == 0.5
 
+
 def test_reg_scale_setter():
     p = MiniMLParam((3, 2))
     p.reg_scale = 2.0
     assert p.reg_scale == 2.0
+
 
 def test_reg_scale_coercion():
     p = MiniMLParam((3, 2))
@@ -125,14 +127,15 @@ def test_reg_scale_coercion():
     assert p.reg_scale == 3.0
     assert isinstance(p.reg_scale, float)
     # JAX scalar coerced to float
-    import jax.numpy as jnp
     p.reg_scale = jnp.array(0.1)
     assert isinstance(p.reg_scale, float)
+
 
 def test_reg_scale_invalid():
     p = MiniMLParam((3, 2))
     with pytest.raises((TypeError, ValueError)):
         p.reg_scale = "not_a_number"
+
 
 def test_reg_scale_constructor_coercion():
     # int passed at construction should be stored as float
