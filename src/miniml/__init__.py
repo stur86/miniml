@@ -1,5 +1,5 @@
 from miniml.param import MiniMLParam, MiniMLError, MiniMLParamList
-from miniml.model import MiniMLModel, MiniMLModelList, PredictMode
+from miniml.model import MiniMLModel, MiniMLModelList, PredictMode, PredictKernelOutput
 
 __all__ = [
     "MiniMLParam",
@@ -8,4 +8,5 @@ __all__ = [
     "MiniMLModel",
     "MiniMLModelList",
     "PredictMode",
+    "PredictKernelOutput",
 ]

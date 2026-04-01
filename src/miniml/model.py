@@ -1,6 +1,7 @@
 import numpy as np
 import pickle
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable, Type, TypeVar, Generic
@@ -35,6 +36,25 @@ class PredictMode(Enum):
 
     TRAINING = "training"
     INFERENCE = "inference"
+
+
+@dataclass
+class PredictKernelOutput:
+    """Output of a ``_predict_kernel`` call that optionally carries an activity loss.
+
+    When a model returns this from ``_predict_kernel`` instead of a plain array,
+    the ``activity_loss`` (if set) is added to the training objective scaled by
+    ``active_reg_lambda``.  The inference path discards ``activity_loss`` entirely.
+
+    Attributes:
+        y_pred: The model's prediction array.
+        activity_loss: An optional scalar activity regularization loss.  Should
+            only be computed when ``mode == PredictMode.TRAINING`` — it is ignored
+            during inference, so computing it then wastes time.
+    """
+
+    y_pred: JXArray
+    activity_loss: JXArray | None = field(default=None)
 
 
 # Generic interface for something that has parameters
@@ -335,6 +355,27 @@ class MiniMLModel(ABC):
             buffer=buffer
         )
 
+    @staticmethod
+    def _unpack_kernel_output(
+        result: "JXArray | PredictKernelOutput",
+    ) -> "tuple[JXArray, JXArray]":
+        """Unpack a ``_predict_kernel`` return value into ``(y_pred, activity_loss)``.
+
+        ``activity_loss`` is always a JAX scalar array — ``jnp.zeros(())`` when
+        the result carries no activity loss, so callers can use it unconditionally.
+
+        Args:
+            result: The raw return value of ``_predict_kernel``.
+
+        Returns:
+            Tuple of ``(y_pred, activity_loss)`` where ``activity_loss`` is a
+            JAX scalar (zero if not present).
+        """
+        if isinstance(result, PredictKernelOutput):
+            al = result.activity_loss if result.activity_loss is not None else jnp.zeros(())
+            return result.y_pred, al
+        return result, jnp.zeros(())
+
     @abstractmethod
     def _predict_kernel(
         self,
@@ -343,11 +384,13 @@ class MiniMLModel(ABC):
         rng_key: JXArray | None = None,
         mode: PredictMode = PredictMode.INFERENCE,
         **predict_kwargs: Any,
-    ) -> JXArray:
+    ) -> "JXArray | PredictKernelOutput":
         """Core prediction kernel used for both training and inference.
 
         Subclasses can branch on ``mode`` and optionally use ``rng_key``
-        for stochastic behaviour (e.g. dropout) during training.
+        for stochastic behaviour (e.g. dropout) during training.  May return
+        either a plain ``JXArray`` or a :class:`PredictKernelOutput` to carry
+        an additional activity regularization loss.
 
         Args:
             X: Input data.
@@ -373,13 +416,15 @@ class MiniMLModel(ABC):
         if not hasattr(self, "_jit_predict_kernel"):
 
             def _inference_kernel(X: JXArray, buffer: JXArray, **kwargs: Any) -> JXArray:
-                return self._predict_kernel(
+                result = self._predict_kernel(
                     X,
                     buffer=buffer,
                     rng_key=None,
                     mode=PredictMode.INFERENCE,
                     **kwargs,
                 )
+                y_pred, _ = MiniMLModel._unpack_kernel_output(result)
+                return y_pred
 
             self._jit_predict_kernel = jax.jit(_inference_kernel, inline=True)
 
@@ -411,6 +456,7 @@ class MiniMLModel(ABC):
         reg_lambda: float = 1.0,
         optimizer: MiniMLOptimizer | None = None,
         predict_kwargs: dict[str, Any] = {},
+        active_reg_lambda: float = 1.0,
     ) -> MiniMLOptimResult:
         """Fit the model parameters to the data by minimizing the total loss.
 
@@ -422,6 +468,8 @@ class MiniMLModel(ABC):
                 If None, uses L-BFGS-B ScipyOptimizer. Defaults to None.
             predict_kwargs (dict[str, Any], optional): Additional arguments to pass to the predict method.
                 Defaults to {}.
+            active_reg_lambda (float, optional): Scaling factor for the activity
+                regularization loss returned by ``_predict_kernel``.  Defaults to 1.0.
 
         Returns:
             MiniMLOptimResult: An object containing information about the fitting process.
@@ -461,14 +509,24 @@ class MiniMLModel(ABC):
         def _targ_fun(p: JXArray, rng_key: JXArray | None) -> JXArray:
             nonlocal buffer
             buf_in = buffer.at[p_mask].set(p)
-            y_pred = self._predict_kernel(
+            result = self._predict_kernel(
                 X,
                 buf_in,
                 rng_key,
                 PredictMode.TRAINING,
                 **predict_kwargs,
             )
-            loss = self.total_loss(y, y_pred, reg_lambda, buf_in)
+            has_activity = (
+                isinstance(result, PredictKernelOutput)
+                and result.activity_loss is not None
+            )
+            y_pred, activity_loss = MiniMLModel._unpack_kernel_output(result)
+            base_loss = self.total_loss(y, y_pred, reg_lambda, buf_in)
+            loss = jax.lax.cond(
+                has_activity,
+                lambda: base_loss + active_reg_lambda * activity_loss,
+                lambda: base_loss,
+            )
             return loss
 
         p0 = self._buffer[p_mask]
