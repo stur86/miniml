@@ -372,9 +372,9 @@ class MiniMLModel(ABC):
             JAX scalar (zero if not present).
         """
         if isinstance(result, PredictKernelOutput):
-            al = result.activity_loss if result.activity_loss is not None else jnp.zeros(())
+            al = result.activity_loss if result.activity_loss is not None else jnp.zeros((), dtype=result.y_pred.dtype)
             return result.y_pred, al
-        return result, jnp.zeros(())
+        return result, jnp.zeros((), dtype=result.dtype)
 
     @abstractmethod
     def _predict_kernel(
@@ -516,18 +516,8 @@ class MiniMLModel(ABC):
                 PredictMode.TRAINING,
                 **predict_kwargs,
             )
-            has_activity = (
-                isinstance(result, PredictKernelOutput)
-                and result.activity_loss is not None
-            )
             y_pred, activity_loss = MiniMLModel._unpack_kernel_output(result)
-            base_loss = self.total_loss(y, y_pred, reg_lambda, buf_in)
-            loss = jax.lax.cond(
-                has_activity,
-                lambda: base_loss + active_reg_lambda * activity_loss,
-                lambda: base_loss,
-            )
-            return loss
+            return self.total_loss(y, y_pred, reg_lambda, buf_in) + active_reg_lambda * activity_loss
 
         p0 = self._buffer[p_mask]
 

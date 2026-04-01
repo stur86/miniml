@@ -79,3 +79,45 @@ M = MiniMLParam((3,2), reg_loss=LNormRegularization(2), reg_scale=0.1)
 means the loss on M will be multiplied by an additional factor of `0.1`. The overall `reg_lambda` will still apply as well.
 
 For more information see [the `loss` module API reference](api/miniml/loss.md).
+
+## Activity regularization
+
+Sometimes the regularization you need depends on intermediate values computed during the forward pass — layer activations, attention weights, or other internal state — rather than on the raw parameters. For these cases, `_predict_kernel` can return a `PredictKernelOutput` object instead of a plain array:
+
+```python
+from miniml import MiniMLModel, MiniMLParam, PredictKernelOutput, PredictMode
+from miniml.loss import squared_error_loss, LNormRegularization
+
+class SparseActivationModel(MiniMLModel):
+    def __init__(self, n_in: int, n_out: int):
+        self._W = MiniMLParam((n_in, n_out))
+        self._b = MiniMLParam((n_out,))
+        self._l1 = LNormRegularization(p=1)
+        super().__init__(loss=squared_error_loss)
+
+    def _predict_kernel(self, X, buffer, rng_key=None, mode=PredictMode.INFERENCE, **kw):
+        activations = X @ self._W(buffer) + self._b(buffer)
+        if mode == PredictMode.TRAINING:
+            return PredictKernelOutput(
+                y_pred=activations,
+                activity_loss=self._l1(activations),
+            )
+        return activations
+```
+
+The `activity_loss` field is added to the total training objective scaled by a separate `active_reg_lambda` parameter in `.fit()`:
+
+$$
+\mathcal{L}_{\text{total}} = \mathcal{L}(y, \hat{y}) + \lambda\sum_i\mathcal{R}_i(w_i) + \lambda_{\text{act}}\,\mathcal{L}_{\text{activity}}
+$$
+
+```python
+res = model.fit(X, y, reg_lambda=0.01, active_reg_lambda=0.1)
+```
+
+During inference (`.predict()`), `activity_loss` is discarded; the model behaves identically to one returning a plain array.
+
+!!! note
+    It is strongly recommended to compute the `activity_loss` only when `mode == PredictMode.TRAINING`, as shown above. During inference the value is ignored, so computing it is a pure waste of time.
+
+When using `Stack` or `Parallel`, activity losses from all children are automatically summed and propagated upward, so composite models work without any extra effort. For manually written composite models that call children's `_predict_kernel` directly, use `MiniMLModel._unpack_kernel_output(result)` to safely extract `(y_pred, activity_loss)` from whatever the child returns.
