@@ -32,6 +32,7 @@ class MultiHeadAttention(MiniMLModel):
         loss: LossFunction = squared_error_loss,
         reg_loss: RegLossFunction = LNormRegularization(2),
         dropout: float = 0.0,
+        post_projection_encoder: MiniMLModel | None = None,
         dtype: DTypeLike = jnp.float32,
     ) -> None:
         r"""Initialize the MultiHeadAttention model.
@@ -63,6 +64,9 @@ class MultiHeadAttention(MiniMLModel):
         output = mha.predict((Xq, Xk, Xv))  # where Xq has shape (..., embed_dim), Xk and Xv have shape (..., kdim) and (..., vdim) respectively
         ```
 
+        If a post-projection encoder is provided, the projected Xq and Xk are passed through it before building the attention scores. Use this to
+        apply for example RoPE positional encoding.
+
         Args:
             embed_dim (int): Total dimension of the model.
             num_heads (int, optional): Number of attention heads. Defaults to 1.
@@ -71,6 +75,7 @@ class MultiHeadAttention(MiniMLModel):
             loss (LossFunction, optional): Loss function for the model. Defaults to squared_error_loss.
             reg_loss (RegLossFunction, optional): Regularization function for the weights. Defaults to LNormRegularization(2).
             dropout (float, optional): Dropout rate for attention weights. Defaults to 0.0.
+            post_projection_encoder (MiniMLModel | None, optional): Post-projection encoder for the output. Defaults to None.
             dtype (DTypeLike, optional): Data type for the model parameters. Defaults to jnp.float32.
         """
 
@@ -80,6 +85,7 @@ class MultiHeadAttention(MiniMLModel):
         self._num_heads = num_heads
         self._head_dim = embed_dim // num_heads
         self._dropout = dropout
+        self._post_projection_encoder = post_projection_encoder
         if self._head_dim * num_heads != embed_dim:
             raise MiniMLError("embed_dim must be divisible by num_heads.")
 
@@ -165,6 +171,10 @@ class MultiHeadAttention(MiniMLModel):
             Xk = Xk @ K + Kb
             Xv = Xv @ V + Vb
 
+        if self._post_projection_encoder is not None:
+            Xq = self._post_projection_encoder.predict(Xq)
+            Xk = self._post_projection_encoder.predict(Xk)
+
         # Split into heads
         Xq_heads = Xq.reshape(Xq.shape[:-1] + (self._num_heads, self._head_dim))
         Xk_heads = Xk.reshape(Xk.shape[:-1] + (self._num_heads, self._head_dim))
@@ -180,7 +190,7 @@ class MultiHeadAttention(MiniMLModel):
         attn_weights = jnp.exp(
             attn_scores - jnp.max(attn_scores, axis=-1, keepdims=True)
         )
-        
+
         # If needed, apply dropout to attention weights
         if mode == PredictMode.TRAINING and self._dropout > 0.0:
             if rng_key is None:
@@ -191,7 +201,7 @@ class MultiHeadAttention(MiniMLModel):
                 attn_weights.shape, p=1.0 - self._dropout, dtype=attn_weights.dtype
             ).generate(rng_key)
             attn_weights = attn_weights * dropout_mask
-        
+
         attn_weights = attn_weights / jnp.sum(attn_weights, axis=-1, keepdims=True)
         attn_output_heads = jnp.einsum("...qhk,...khd->...qhd", attn_weights, Xv_heads)
         attn_output = attn_output_heads.reshape(
