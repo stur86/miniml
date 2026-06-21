@@ -2,7 +2,7 @@ from jax import Array
 import jax
 import jax.numpy as jnp
 from typing import Literal
-from miniml.model import MiniMLModel, MiniMLModelList, PredictMode
+from miniml.model import MiniMLModel, MiniMLModelList, PredictMode, PredictKernelOutput
 from miniml.loss import LossFunction
 
 
@@ -81,19 +81,22 @@ class Stack(MiniMLModel):
         rng_key: Array | None = None,
         mode: PredictMode = PredictMode.INFERENCE,
         **predict_kwargs,
-    ) -> Array:
+    ) -> PredictKernelOutput:
+        total_activity_loss = jnp.zeros((), dtype=self._dtype)
         for model in self._model_list.contents:
             rng_key, subkey = (
                 jax.random.split(rng_key) if rng_key is not None else (None, None)
             )
-            X = model._predict_kernel(
+            result = model._predict_kernel(
                 X,
                 buffer,
                 rng_key=subkey,
                 mode=mode,
                 **predict_kwargs,
             )
-        return X
+            X, child_activity_loss = MiniMLModel._unpack_kernel_output(result)
+            total_activity_loss = total_activity_loss + child_activity_loss
+        return PredictKernelOutput(y_pred=X, activity_loss=total_activity_loss)
 
 
 class Parallel(MiniMLModel):
@@ -137,22 +140,24 @@ class Parallel(MiniMLModel):
         rng_key: Array | None,
         mode: PredictMode,
         **predict_kwargs,
-    ) -> list[Array]:
+    ) -> "tuple[list[Array], Array]":
         outputs = []
+        total_activity_loss = jnp.zeros((), dtype=self._dtype)
         for model in self._model_list.contents:
             rng_key, subkey = (
                 jax.random.split(rng_key) if rng_key is not None else (None, None)
             )
-            outputs.append(
-                model._predict_kernel(
-                    X,
-                    buffer,
-                    rng_key=subkey,
-                    mode=mode,
-                    **predict_kwargs,
-                )
+            result = model._predict_kernel(
+                X,
+                buffer,
+                rng_key=subkey,
+                mode=mode,
+                **predict_kwargs,
             )
-        return outputs
+            y_pred, child_activity_loss = MiniMLModel._unpack_kernel_output(result)
+            outputs.append(y_pred)
+            total_activity_loss = total_activity_loss + child_activity_loss
+        return outputs, total_activity_loss
 
     def _predictf_sum(
         self,
@@ -161,15 +166,18 @@ class Parallel(MiniMLModel):
         rng_key: Array | None,
         mode: PredictMode,
         **predict_kwargs,
-    ) -> Array:
-        outputs = self._iter_predictf(
+    ) -> PredictKernelOutput:
+        outputs, total_activity_loss = self._iter_predictf(
             X,
             buffer,
             rng_key=rng_key,
             mode=mode,
             **predict_kwargs,
         )
-        return jnp.sum(jnp.stack(outputs), axis=0)
+        return PredictKernelOutput(
+            y_pred=jnp.sum(jnp.stack(outputs), axis=0),
+            activity_loss=total_activity_loss,
+        )
 
     def _predictf_concat(
         self,
@@ -178,15 +186,18 @@ class Parallel(MiniMLModel):
         rng_key: Array | None,
         mode: PredictMode,
         **predict_kwargs,
-    ) -> Array:
-        outputs = self._iter_predictf(
+    ) -> PredictKernelOutput:
+        outputs, total_activity_loss = self._iter_predictf(
             X,
             buffer,
             rng_key=rng_key,
             mode=mode,
             **predict_kwargs,
         )
-        return jnp.concatenate(outputs, axis=self._concat_axis)
+        return PredictKernelOutput(
+            y_pred=jnp.concatenate(outputs, axis=self._concat_axis),
+            activity_loss=total_activity_loss,
+        )
 
     def _predict_kernel(
         self,
@@ -195,7 +206,7 @@ class Parallel(MiniMLModel):
         rng_key: Array | None = None,
         mode: PredictMode = PredictMode.INFERENCE,
         **predict_kwargs,
-    ) -> Array:
+    ) -> PredictKernelOutput:
         return self._predict_func(
             X,
             buffer,

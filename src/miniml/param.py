@@ -38,6 +38,7 @@ class MiniMLParam:
     _size: int
     _reg_loss: RegLossFunction | None = None
     _reg_scale: float
+    _rnd_scale: float
 
     _bufc: BufferContainer | None = None
     _buf_i0: int = -1
@@ -48,6 +49,7 @@ class MiniMLParam:
         dtype: DTypeLike = np.float32,
         reg_loss: RegLossFunction | None = None,
         reg_scale: float = 1.0,
+        rnd_scale: float = 1.0,
     ) -> None:
         """Construct a MiniML Parameter
 
@@ -56,6 +58,8 @@ class MiniMLParam:
             dtype (DTypeLike, optional): The data type of the parameter. Defaults to np.float32.
             reg_loss (RegLossFunction, optional): The regularization loss function. Defaults to None.
             reg_scale (float, optional): The scale factor for the regularization loss. Defaults to 1.0.
+            rnd_scale (float, optional): The scale factor applied to the parameter's values after
+                randomization. Defaults to 1.0.
         """
         if dtype not in _supported_types.values():
             raise MiniMLError(f"Parameter dtype {dtype} not supported")
@@ -66,6 +70,7 @@ class MiniMLParam:
         self._size = int(np.prod(shape))
         self._reg_loss = reg_loss
         self.reg_scale = reg_scale
+        self.rnd_scale = rnd_scale
 
     @property
     def shape(self) -> tuple[int, ...]:
@@ -95,6 +100,15 @@ class MiniMLParam:
     @reg_scale.setter
     def reg_scale(self, value: float) -> None:
         self._reg_scale = float(value)
+
+    @property
+    def rnd_scale(self) -> float:
+        """The scale factor applied to this parameter's values after randomization."""
+        return self._rnd_scale
+
+    @rnd_scale.setter
+    def rnd_scale(self, value: float) -> None:
+        self._rnd_scale = float(value)
 
     def _validate_buffer(self, i0: int, buf: JXArray) -> None:
         """Validate that a buffer and starting index pair

@@ -1,3 +1,4 @@
+import numpy as np
 from jax import Array as JXArray
 import jax.numpy as jnp
 from numpy.typing import DTypeLike
@@ -38,9 +39,11 @@ class Linear(MiniMLModel):
             apply_bias_reg (bool, optional): Whether to apply regularization to the bias term. Defaults to False.
         """
 
-        self._W = MiniMLParam((n_in, n_out), dtype=dtype, reg_loss=reg_loss)
+        self._W = MiniMLParam(
+            (n_in, n_out), dtype=dtype, reg_loss=reg_loss, rnd_scale=1.0 / np.sqrt(n_in)
+        )
         bias_reg = reg_loss if apply_bias_reg else None
-        self._b = MiniMLParam((n_out,), dtype=dtype, reg_loss=bias_reg)
+        self._b = MiniMLParam((n_out,), dtype=dtype, reg_loss=bias_reg, rnd_scale=0.0)
 
         super().__init__(loss)
 
