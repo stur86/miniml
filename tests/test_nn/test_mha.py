@@ -1,12 +1,12 @@
-from jax import Array as JxArray
 import jax
+from jax import Array as JxArray
 import jax.numpy as jnp
 import numpy as np
 import pytest
 from pathlib import Path
 from dataclasses import dataclass
 from miniml.nn.mha import MultiHeadAttention, _MultiHeadArg
-from miniml.model import PredictMode
+from miniml.model import PredictMode, MiniMLModel
 from miniml.random import RandomMask
 
 DATA_PATH = Path(__file__).parent / "data"
@@ -222,3 +222,32 @@ def test_mha_dropout_invalid():
             rng_key=None,
             mode=PredictMode.TRAINING,
         )
+
+def test_mha_pproj_encoding_applied():
+    embed_dim = 5
+    num_heads = 1
+    seq_len = 4
+
+    class SamePositionalEncoder(MiniMLModel):
+        def __init__(self, embed_dim: int):
+            self._embed_dim = embed_dim
+            super().__init__()
+            self.bind()
+
+        def _predict_kernel(self, x, buffer, rng_key, mode) -> jax.Array:
+            # This positional encoder ignores original contents and just returns identity matrices
+            # so that each token outputs its own value vector
+            n_diff = x.shape[1]-x.shape[0]
+            return jnp.concatenate([jnp.eye(x.shape[0]), jnp.zeros((x.shape[0], n_diff))], axis=1)*100
+
+    mha = MultiHeadAttention(embed_dim=embed_dim, num_heads=num_heads, post_projection_encoder=SamePositionalEncoder(embed_dim))
+    mha.bind()
+    mha.set_params({
+        "_QKV.v": jnp.concatenate([jnp.eye(embed_dim) for i in range(3)], axis=1),
+        "_out_proj._W.v": jnp.eye(embed_dim)
+    })
+
+    X = jnp.arange(seq_len * embed_dim, dtype=jnp.float32).reshape(seq_len, embed_dim)
+    Y = mha.predict(X)
+
+    assert np.allclose(X, Y)
