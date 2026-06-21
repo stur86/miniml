@@ -33,6 +33,23 @@ def test_linear():
     assert np.allclose(y_pred, X @ W + b)
 
 
+def test_linear_randomize_rnd_scale():
+    n_in, n_out = 16, 8
+
+    m = Linear(n_in=n_in, n_out=n_out)
+    m.randomize(seed=42)
+
+    # Bias should be zeroed out after randomization
+    assert np.array_equal(m._b.value, np.zeros((n_out,)))
+
+    # Weights should be scaled by 1/sqrt(n_in) relative to the unscaled draw
+    m_unscaled = Linear(n_in=n_in, n_out=n_out)
+    m_unscaled._W.rnd_scale = 1.0
+    m_unscaled.randomize(seed=42)
+
+    assert np.allclose(m._W.value, m_unscaled._W.value / np.sqrt(n_in))
+
+
 def test_linear_w_data(data_path: Path):
     fname = data_path / "linear.npz"
     data = np.load(fname, allow_pickle=True)

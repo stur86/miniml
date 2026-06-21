@@ -142,3 +142,44 @@ def test_reg_scale_constructor_coercion():
     p = MiniMLParam((3, 2), reg_scale=2)
     assert isinstance(p.reg_scale, float)
     assert p.reg_scale == 2.0
+
+
+def test_rnd_scale_default():
+    p = MiniMLParam((3, 2))
+    assert p.rnd_scale == 1.0
+
+
+def test_rnd_scale_property():
+    # Getter returns the value set at construction
+    p = MiniMLParam((3, 2), rnd_scale=0.5)
+    assert p.rnd_scale == 0.5
+
+
+def test_rnd_scale_setter():
+    p = MiniMLParam((3, 2))
+    p.rnd_scale = 2.0
+    assert p.rnd_scale == 2.0
+
+
+def test_rnd_scale_coercion():
+    p = MiniMLParam((3, 2))
+    # int coerced to float
+    p.rnd_scale = 3
+    assert p.rnd_scale == 3.0
+    assert isinstance(p.rnd_scale, float)
+    # JAX scalar coerced to float
+    p.rnd_scale = jnp.array(0.1)
+    assert isinstance(p.rnd_scale, float)
+
+
+def test_rnd_scale_invalid():
+    p = MiniMLParam((3, 2))
+    with pytest.raises((TypeError, ValueError)):
+        p.rnd_scale = "not_a_number"
+
+
+def test_rnd_scale_constructor_coercion():
+    # int passed at construction should be stored as float
+    p = MiniMLParam((3, 2), rnd_scale=2)
+    assert isinstance(p.rnd_scale, float)
+    assert p.rnd_scale == 2.0

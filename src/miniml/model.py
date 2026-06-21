@@ -298,6 +298,12 @@ class MiniMLModel(ABC):
                 f"Randomization of parameters with dtype {dtype} not supported"
             )
 
+        for ref in self._params:
+            p = ref.param
+            if p.rnd_scale != 1.0:
+                idx = slice(p._buf_i0, p._buf_i0 + p.size)
+                self._buffer = self._buffer.at[idx].multiply(p.rnd_scale)
+
     def loss(self, y_true: JXArray, y_pred: JXArray) -> JXArray:
         """Compute the loss $\\mathcal{L}(y, \\hat{y})$ between true and predicted values using the model's loss function.
 

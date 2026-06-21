@@ -95,7 +95,7 @@ def test_model_basic(tmp_path: Path):
 
     for k in param_vals:
         assert np.array_equal(param_vals[k], reloaded_vals[k])
-        
+
     # Try saving only state
     save_state_path = tmp_path / "model_state.npz"
     m_loaded.save(save_state_path, state_only=True)
@@ -105,7 +105,44 @@ def test_model_basic(tmp_path: Path):
     state_loaded_vals = m2.get_params()
     for k in param_vals:
         assert np.array_equal(param_vals[k], state_loaded_vals[k])
-        
+
+
+def test_model_randomize_respects_rnd_scale():
+
+    class ScaledModel(MiniMLModel):
+        def __init__(self, scale: float):
+            self._a = MiniMLParam((4,), rnd_scale=1.0)
+            self._b = MiniMLParam((4,), rnd_scale=scale)
+            super().__init__(loss=squared_error_loss)
+
+        def _predict_kernel(
+            self,
+            X: JXArray,
+            buffer: JXArray,
+            rng_key: JXArray | None = None,
+            mode: PredictMode = PredictMode.INFERENCE,
+            **predict_kwargs,
+        ) -> JXArray:
+            return self._a(buffer)
+
+    # A zero rnd_scale should zero out the parameter after randomization
+    m_zero = ScaledModel(scale=0.0)
+    m_zero.randomize(seed=42)
+    assert np.array_equal(m_zero._b.value, np.zeros((4,)))
+
+    # A non-trivial rnd_scale should be an exact multiple of the unscaled draw,
+    # since scaling is a deterministic post-multiply of the same random draw
+    m_unscaled = ScaledModel(scale=1.0)
+    m_unscaled.randomize(seed=42)
+
+    m_scaled = ScaledModel(scale=0.5)
+    m_scaled.randomize(seed=42)
+
+    assert np.allclose(m_scaled._b.value, 0.5 * m_unscaled._b.value)
+    # The unscaled param should be unaffected by the other param's rnd_scale
+    assert np.array_equal(m_scaled._a.value, m_unscaled._a.value)
+
+
 class NoOpModel(MiniMLModel):
     def __init__(self):
         super().__init__()
