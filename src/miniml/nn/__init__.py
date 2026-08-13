@@ -22,6 +22,7 @@ from miniml.nn.rbf import (
     PolyharmonicRBF,
 )
 from miniml.nn.linear import Linear
+from miniml.nn.conv import Conv
 from miniml.nn.compose import Stack, Identity, Parallel, Take
 from miniml.nn.mlp import MLP
 from miniml.nn.rbfnet import RBFLayer
@@ -31,6 +32,7 @@ from miniml.nn.mha import MultiHeadAttention
 
 __all__ = [
     "Linear",
+    "Conv",
     "Stack",
     "MLP",
     "Embedding",
