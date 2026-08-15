@@ -1,8 +1,57 @@
 import numpy as np
 import pytest
-from jax import numpy as jnp
+from dataclasses import dataclass
+from pathlib import Path
+from jax import Array as JxArray, numpy as jnp
 from miniml.nn.conv import Conv
 from miniml.param import MiniMLError
+
+DATA_PATH = Path(__file__).parent / "data"
+
+
+@dataclass
+class ConvData:
+    params: dict
+    m_weights: dict
+    t_input_0: JxArray
+    t_output: JxArray
+
+    def apply_weights(self, conv: Conv) -> None:
+        params = {"_W.v": jnp.array(self.m_weights["_W"])}
+        if "_b" in self.m_weights:
+            params["_b.v"] = jnp.array(self.m_weights["_b"])
+        conv.set_params(params)
+
+    @property
+    def init_args(self) -> dict:
+        return {
+            "n_dim": self.params["n_dim"],
+            "in_channels": self.params["in_channels"],
+            "out_channels": self.params["out_channels"],
+            "kernel_size": self.params["kernel_size"],
+            "stride": self.params.get("stride", 1),
+            "padding": self.params.get("padding", "valid"),
+            "dilation": self.params.get("dilation", 1),
+            "groups": self.params.get("groups", 1),
+            "bias": self.params.get("bias", True),
+        }
+
+    @property
+    def X(self) -> JxArray:
+        return jnp.array(self.t_input_0)
+
+
+@pytest.fixture
+def conv_data(name: str) -> ConvData:
+    data_file = DATA_PATH / f"{name}.npz"
+    data = np.load(data_file, allow_pickle=True)
+
+    return ConvData(
+        params=data["params"].item(),
+        m_weights=data["m_weights"].item(),
+        t_input_0=data["t_input_0"],
+        t_output=data["t_output"],
+    )
 
 
 def _reference_conv1d(
@@ -71,6 +120,19 @@ def test_conv1d_against_reference(stride: int) -> None:
 
     assert y.shape == y_ref.shape
     assert np.allclose(y, y_ref, atol=1e-5)
+
+
+@pytest.mark.parametrize(
+    "name", ["conv_1", "conv_2", "conv_3", "conv_4", "conv_5", "conv_6"]
+)
+def test_conv_w_data(conv_data: ConvData) -> None:
+    """The convolution matches PyTorch output on stored test data."""
+    conv = Conv(**conv_data.init_args)
+    conv.bind()
+    conv_data.apply_weights(conv)
+    output = conv.predict(conv_data.X)
+    assert output.shape == conv_data.t_output.shape
+    assert np.allclose(output, conv_data.t_output, atol=1e-5)
 
 
 def test_ndim_output_shapes() -> None:

@@ -1,0 +1,5 @@
+outs:
+- md5: 6b34e665b207258b43583b132dfbb88a
+  size: 3752
+  hash: md5
+  path: conv_3.npz
