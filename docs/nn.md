@@ -4,6 +4,7 @@ The [`miniml.nn` module](api/miniml/nn/index.md) provides some basic utilities t
 
 * [`miniml.nn.activations`](api/miniml/nn/activations.md) includes common activation functions and an `Activation` layer class that can be used as a container for them;
 * [`miniml.nn.linear`](api/miniml/nn/linear.md) contains a basic linear layer;
+* [`miniml.nn.conv`](api/miniml/nn/conv.md) contains a `Conv` layer performing a convolution over an arbitrary number of spatial dimensions;
 * [`miniml.nn.mlp`](api/miniml/nn/mlp.md) contains a simple [Multilayer Perceptron](https://en.wikipedia.org/wiki/Multilayer_perceptron);
 * [`miniml.nn.compose`](api/miniml/nn/compose.md) contains a `Stack` model that allows to execute sequentially a list of models, passing the output of the previous one as input to the following, a `Parallel` model for running multiple models on the same input and aggregating their output by either concatenation or sum, and convenience `Identity` (returns the input) and `Take` (extracts an index from an axis) models;
 * [`miniml.nn.mha`](api/miniml/nn/mha.md) contains a `MultiHeadAttention` layer;
