@@ -389,9 +389,9 @@ class AffineCouplingStack(InvertibleModel, MiniMLModel):
 
         Args:
             dim (int): Total dimension of the input.
-            n_layers (int | None, optional): Number of coupling layers.  Defaults
-                to None, which means the length of ``partition`` if it is a
-                sequence, and 4 if it is a rule.
+            n_layers (int | None, optional): Number of coupling layers.  Required
+                when ``partition`` is a rule; optional when it is a sequence, but
+                must then agree with its length.  Defaults to None.
             partition (CouplingPartition | Iterable[slice | set[int]], optional):
                 Either the target indices of each layer, one entry per layer, or
                 a rule returning them, called as ``partition(dim, layer_idx)``.
@@ -414,8 +414,9 @@ class AffineCouplingStack(InvertibleModel, MiniMLModel):
                 Defaults to jnp.float32.
 
         Raises:
-            MiniMLError: If the number of layers is not positive, or does not
-                match the number of partitions given.
+            MiniMLError: If the number of layers is missing together with a rule,
+                or disagrees with the number of partitions given.
+            MiniMLError: If the number of layers is not positive.
             MiniMLError: If a partition is neither a slice nor a set of indices.
             MiniMLError: If a partition is not a valid split of ``dim``.
         """
@@ -458,7 +459,6 @@ class AffineCouplingStack(InvertibleModel, MiniMLModel):
         # that loading the model back does not depend on calling it again
         self._replace_init_args(
             dim,
-            n_layers=len(targets),
             partition=[set(target) for target in targets],
             hidden_size=hidden_size,
             activation=activation,
@@ -510,22 +510,27 @@ class AffineCouplingStack(InvertibleModel, MiniMLModel):
                 or the sequence of target indices.
 
         Raises:
-            MiniMLError: If the number of layers is not positive, or does not
-                match the number of partitions given.
+            MiniMLError: If the number of layers is missing together with a rule,
+                or disagrees with the number of partitions given.
+            MiniMLError: If the number of layers is not positive.
             MiniMLError: If a partition is neither a slice nor a set of indices.
 
         Returns:
             list[set[int]]: The target indices of each layer.
         """
         if callable(partition):
-            n_layers = 4 if n_layers is None else n_layers
+            if n_layers is None:
+                raise MiniMLError(
+                    "n_layers is required when partition is a rule: there is no "
+                    "way to tell from the rule how many layers to build"
+                )
             if n_layers <= 0:
                 raise MiniMLError("n_layers must be a positive integer")
             raw = [partition(dim, i) for i in range(n_layers)]
         else:
             raw = list(partition)
             if len(raw) == 0:
-                raise MiniMLError("n_layers must be a positive integer")
+                raise MiniMLError("partition must list at least one layer")
             if n_layers is not None and n_layers != len(raw):
                 raise MiniMLError(
                     f"n_layers is {n_layers}, but {len(raw)} partitions were given"

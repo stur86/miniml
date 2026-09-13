@@ -47,13 +47,13 @@ flow = AffineCouplingStack(dim=5, n_layers=4)
 flow.invert(flow.predict(X)) # == X
 ```
 
-Which indices each layer transforms can be given directly, one entry per layer, as index sets or slices:
+Which indices each layer transforms can be given directly, one entry per layer, as index sets or slices. The sequence already says how many layers there are, so `n_layers` is optional with it, and must agree with its length if given:
 
 ```py
 AffineCouplingStack(dim=4, partition=[{0, 1}, slice(1, None, 2), {2, 3}])
 ```
 
-Or it can be left to a rule, taking the dimension and the index of the layer in the stack:
+Or it can be left to a rule, taking the dimension and the index of the layer in the stack. A rule says which indices, not how many layers, so `n_layers` is required with it:
 
 ```py
 def my_partition(dim: int, layer_idx: int) -> slice | set[int]:

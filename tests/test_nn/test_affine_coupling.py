@@ -296,9 +296,10 @@ def test_stack_passes_dim_and_index_to_the_partition():
     assert seen == [(6, 0), (6, 1), (6, 2)]
 
 
-def test_stack_invalid_n_layers():
+@pytest.mark.parametrize("n_layers", [0, -2])
+def test_stack_invalid_n_layers(n_layers: int):
     with pytest.raises(MiniMLError, match="n_layers must be a positive integer"):
-        AffineCouplingStack(4, n_layers=0)
+        AffineCouplingStack(4, n_layers=n_layers)
 
 
 def test_stack_warns_about_untouched_dimensions():
@@ -421,14 +422,26 @@ def test_stack_resolves_a_rule_into_partitions():
     assert stack.partitions == [{0, 2, 4}, {1, 3}, {0, 2, 4}]
 
 
-def test_stack_default_number_of_layers():
-    assert len(AffineCouplingStack(4).layers) == 4
+def test_stack_requires_n_layers_with_a_rule():
+    """A rule says which indices, not how many layers."""
+    with pytest.raises(
+        MiniMLError, match="n_layers is required when partition is a rule"
+    ):
+        AffineCouplingStack(4)
+    assert len(AffineCouplingStack(4, n_layers=3).layers) == 3
 
 
 def test_stack_partitions_are_copies():
     stack = AffineCouplingStack(4, n_layers=2)
     stack.partitions[0].add(99)
     assert 99 not in stack.partitions[0]
+
+
+@pytest.mark.filterwarnings("ignore:The partition never transforms")
+def test_stack_n_layers_may_repeat_the_partition_count():
+    """Giving both is allowed, as long as they agree."""
+    stack = AffineCouplingStack(4, n_layers=2, partition=[{0}, {1}])
+    assert stack.partitions == [{0}, {1}]
 
 
 def test_stack_n_layers_must_match_the_partitions():
@@ -438,7 +451,7 @@ def test_stack_n_layers_must_match_the_partitions():
 
 @pytest.mark.parametrize("partition", [[], ()])
 def test_stack_rejects_an_empty_partition_list(partition):
-    with pytest.raises(MiniMLError, match="n_layers must be a positive integer"):
+    with pytest.raises(MiniMLError, match="partition must list at least one layer"):
         AffineCouplingStack(4, partition=partition)
 
 
