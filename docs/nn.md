@@ -13,6 +13,7 @@ The [`miniml.nn` module](api/miniml/nn/index.md) provides some basic utilities t
 * [`miniml.nn.rbfnet`](api/miniml/nn/rbfnet.md) contains a basic radial basis function net layer;
 * [`miniml.nn.embedding`](api/miniml/nn/embedding.md) contains a dictionary embedding block;
 * [`miniml.nn.ortho`](api/miniml/nn/ortho.md) contains a `CayleyMatrix` parameter, namely a matrix forced to have orthogonal columns.
+* [`miniml.nn.affine_coupling`](api/miniml/nn/affine_coupling.md) contains an `AffineCouplingLayer`, an invertible layer for [normalizing flows](invertible.md), and an `AffineCouplingStack` chaining several of them.
 
 Check [the API docs](api/miniml/nn/index.md) for more information.
 

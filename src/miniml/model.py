@@ -120,17 +120,27 @@ class MiniMLModel(ABC):
     def __new__(cls: Type[T], *args, **kwargs) -> T:
         instance = super().__new__(cls)  # type: ignore
         # Store init arguments for saving/loading pickled
-        try:
-            instance._init_args = pickle.dumps(
-                {
-                    "args": args,
-                    "kwargs": kwargs,
-                }
-            )
-        except Exception:
-            # Any reason why pickling fails, just set to None
-            instance._init_args = None
+        instance._replace_init_args(*args, **kwargs)
         return instance
+
+    def _replace_init_args(self, *args: Any, **kwargs: Any) -> None:
+        """Record the arguments that ``load()`` rebuilds this model from.
+
+        They are stored as passed to the constructor.  A model that resolves an
+        argument into plain data while constructing itself can call this again to
+        store the data instead, so that loading it back does not depend on
+        rebuilding the original object.  The arguments must still describe the
+        same model.
+
+        Args:
+            *args: Positional arguments to record.
+            **kwargs: Keyword arguments to record.
+        """
+        try:
+            self._init_args = pickle.dumps({"args": args, "kwargs": kwargs})
+        except Exception:
+            # Any reason why pickling fails, just set to None: it only blocks save()
+            self._init_args = None
 
     def __init__(self, loss: LossFunction | None = None) -> None:
         """Construct a MiniML Model.
