@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -119,8 +120,8 @@ def test_affine_coupling_has_two_mlps():
 
 def test_affine_coupling_default_target_is_even():
     layer = AffineCouplingLayer(dim=5)
-    assert layer._target == {0, 2, 4}
-    assert layer._input == {1, 3}
+    assert set(layer._target_indices.tolist()) == {0, 2, 4}
+    assert set(layer._input_indices.tolist()) == {1, 3}
 
 
 def test_affine_coupling_invalid_targets():
@@ -153,3 +154,52 @@ def test_affine_coupling_save_and_load(tmp_path: Path):
     assert jnp.array_equal(
         layer.invert(layer.predict(X)), loaded.invert(layer.predict(X))
     )
+
+
+@pytest.mark.parametrize(
+    "dim,target_indices",
+    [
+        (5, None),
+        (5, slice(1, None, 2)),
+        (6, {0, 1, 2}),
+        (4, {1, 3}),
+    ],
+)
+def test_log_det_jac_matches_autodiff(dim: int, target_indices):
+    layer = AffineCouplingLayer(dim=dim, target_indices=target_indices)
+    layer.randomize(seed=42)
+
+    X = jnp.array(np.random.default_rng(3).normal(size=(4, dim)))
+    ldj = layer.log_det_jac(X)
+
+    # Compare against the determinant of the full Jacobian, one sample at a time
+    def _single(x):
+        return layer.predict(x[None])[0]
+
+    ref = jnp.array(
+        [jnp.log(jnp.abs(jnp.linalg.det(jax.jacfwd(_single)(x)))) for x in X]
+    )
+    assert ldj.shape == (4,)
+    assert jnp.allclose(ldj, ref, atol=1e-5)
+
+
+def test_log_det_jac_is_per_sample():
+    """One value per sample, so batches keep their individual likelihoods."""
+    layer = AffineCouplingLayer(dim=4)
+    layer.randomize(seed=0)
+
+    X = jnp.array(np.random.default_rng(4).normal(size=(3, 2, 4)))
+    assert layer.log_det_jac(X).shape == (3, 2)
+    # An unbatched sample gives a scalar
+    assert layer.log_det_jac(X[0, 0]).shape == ()
+    # ... and samples are independent of each other
+    assert jnp.allclose(layer.log_det_jac(X)[0], layer.log_det_jac(X[0]))
+
+
+def test_log_det_jac_is_finite_for_extreme_inputs():
+    """The scale is an exponential, so the determinant can never vanish."""
+    layer = AffineCouplingLayer(dim=4)
+    layer.randomize(seed=1)
+
+    X = jnp.array([[-1e3, 1e3, -1e3, 1e3], [0.0, 0.0, 0.0, 0.0]])
+    assert bool(jnp.all(jnp.isfinite(layer.log_det_jac(X))))

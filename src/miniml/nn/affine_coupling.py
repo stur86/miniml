@@ -1,3 +1,5 @@
+from typing import Any
+
 import jax
 import jax.numpy as jnp
 from jax import Array as JXArray
@@ -77,27 +79,27 @@ class AffineCouplingLayer(InvertibleModel, MiniMLModel):
             raise MiniMLError("dim must be a positive integer")
 
         if target_indices is None:
-            self._target = self._slice_to_set(slice(None, None, 2), dim)
+            target = self._slice_to_set(slice(None, None, 2), dim)
         elif isinstance(target_indices, slice):
-            self._target = self._slice_to_set(target_indices, dim)
+            target = self._slice_to_set(target_indices, dim)
         else:
-            self._target = set(target_indices)
-        self._input = set(range(dim)) - self._target
+            target = set(target_indices)
+        input = set(range(dim)) - target
 
-        if any(i < 0 or i >= dim for i in self._target):
+        if any(i < 0 or i >= dim for i in target):
             raise MiniMLError(
-                f"target_indices contain indices outside [0, {dim}): {sorted(self._target)}"
+                f"target_indices contain indices outside [0, {dim}): {sorted(target)}"
             )
-        if len(self._target) == 0 or len(self._input) == 0:
+        if len(target) == 0 or len(input) == 0:
             raise MiniMLError(
                 "AffineCouplingLayer requires at least one input and one "
-                f"target index (got input={sorted(self._input)}, target={sorted(self._target)})"
+                f"target index (got input={sorted(input)}, target={sorted(target)})"
             )
 
-        self._input_indices = jnp.array(sorted(self._input))
-        self._target_indices = jnp.array(sorted(self._target))
+        self._input_indices = jnp.array(sorted(input))
+        self._target_indices = jnp.array(sorted(target))
 
-        n_in, n_out = len(self._input), len(self._target)
+        n_in, n_out = len(input), len(target)
         if hidden_size is None:
             n_hidden = 2 * n_in
         else:
@@ -194,3 +196,62 @@ class AffineCouplingLayer(InvertibleModel, MiniMLModel):
         X_t = (Y_t - p) / q
         X = Y.at[..., self._target_indices].set(X_t)
         return MiniMLModel._with_activity_loss(X, activity_loss)
+
+    def _log_det_jac_kernel(
+        self,
+        X: JXArray,
+        buffer: JXArray,
+        rng_key: JXArray | None = None,
+        mode: PredictMode = PredictMode.INFERENCE,
+        **predict_kwargs,
+    ) -> JXArray:
+        """Core kernel for :meth:`log_det_jac`.  Only ``_mlp_q`` is evaluated."""
+        X_in = X[..., self._input_indices]
+        result = self._mlp_q._predict_kernel(
+            X_in,
+            buffer,
+            rng_key=rng_key,
+            mode=mode,
+            **predict_kwargs,
+        )
+        q, _ = MiniMLModel._unpack_kernel_output(result)
+        return jnp.sum(q, axis=-1)
+
+    def log_det_jac(self, X: JXArray, **predict_kwargs: dict[str, Any]) -> JXArray:
+        r"""Log absolute determinant of the Jacobian of the transformation at ``X``.
+
+        The input set passes through unchanged and each target component is
+        scaled by its own :math:`\exp(q)`, so the Jacobian is triangular and
+
+        $$
+        \log\left|\det\frac{\partial y}{\partial x}\right| = \sum_t q_t(x_i)
+        $$
+
+        which is what generative flows add to the log likelihood of the
+        transformed sample.  It is always finite, since the scale is an
+        exponential and can not vanish.
+
+        Args:
+            X (JXArray): Input data, of shape ``(..., dim)``.
+            **predict_kwargs: Additional named arguments for prediction.
+
+        Returns:
+            JXArray: The log determinant for each sample, of shape ``(...)``.
+                Sum it to get the total for a batch.
+        """
+        if not hasattr(self, "_jit_log_det_jac_kernel"):
+
+            def _inference_log_det_jac(
+                X: JXArray, buffer: JXArray, **kwargs: Any
+            ) -> JXArray:
+                return self._log_det_jac_kernel(
+                    X,
+                    buffer=buffer,
+                    rng_key=None,
+                    mode=PredictMode.INFERENCE,
+                    **kwargs,
+                )
+
+            self._jit_log_det_jac_kernel = jax.jit(_inference_log_det_jac, inline=True)
+
+        return self._jit_log_det_jac_kernel(X, buffer=self._buffer, **predict_kwargs)
