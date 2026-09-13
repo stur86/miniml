@@ -1,7 +1,8 @@
-import pytest
-import numpy as np
-from jax.scipy.special import erf
 import jax.numpy as jnp
+import numpy as np
+import pytest
+from jax.scipy.special import erf
+
 from miniml.nn import activations
 
 

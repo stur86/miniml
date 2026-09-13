@@ -29,6 +29,7 @@ class Identity(MiniMLModel):
     ) -> Array:
         return X * self._scale
 
+
 class Take(MiniMLModel):
     """A MiniML model that takes specific indices from the input array along a given axis."""
 
@@ -53,6 +54,7 @@ class Take(MiniMLModel):
         **predict_kwargs,
     ) -> Array:
         return jnp.take(X, indices=self._indices, axis=self._axis)
+
 
 class Stack(MiniMLModel):
     """A MiniML model that stacks multiple MiniML models sequentially."""
@@ -81,8 +83,8 @@ class Stack(MiniMLModel):
         rng_key: Array | None = None,
         mode: PredictMode = PredictMode.INFERENCE,
         **predict_kwargs,
-    ) -> PredictKernelOutput:
-        total_activity_loss = jnp.zeros((), dtype=self._dtype)
+    ) -> "Array | PredictKernelOutput":
+        activity_loss: Array | None = None
         for model in self._model_list.contents:
             rng_key, subkey = (
                 jax.random.split(rng_key) if rng_key is not None else (None, None)
@@ -94,9 +96,8 @@ class Stack(MiniMLModel):
                 mode=mode,
                 **predict_kwargs,
             )
-            X, child_activity_loss = MiniMLModel._unpack_kernel_output(result)
-            total_activity_loss = total_activity_loss + child_activity_loss
-        return PredictKernelOutput(y_pred=X, activity_loss=total_activity_loss)
+            X, activity_loss = MiniMLModel._unpack_kernel_output(result, activity_loss)
+        return MiniMLModel._with_activity_loss(X, activity_loss)
 
 
 class Parallel(MiniMLModel):
@@ -132,7 +133,7 @@ class Parallel(MiniMLModel):
             raise ValueError(f"Invalid mode '{mode}'. Choose 'sum' or 'concat'.")
 
         super().__init__(loss=loss)
-        
+
     def _iter_predictf(
         self,
         X: Array,
@@ -140,9 +141,9 @@ class Parallel(MiniMLModel):
         rng_key: Array | None,
         mode: PredictMode,
         **predict_kwargs,
-    ) -> "tuple[list[Array], Array]":
+    ) -> "tuple[list[Array], Array | None]":
         outputs = []
-        total_activity_loss = jnp.zeros((), dtype=self._dtype)
+        activity_loss: Array | None = None
         for model in self._model_list.contents:
             rng_key, subkey = (
                 jax.random.split(rng_key) if rng_key is not None else (None, None)
@@ -154,10 +155,11 @@ class Parallel(MiniMLModel):
                 mode=mode,
                 **predict_kwargs,
             )
-            y_pred, child_activity_loss = MiniMLModel._unpack_kernel_output(result)
+            y_pred, activity_loss = MiniMLModel._unpack_kernel_output(
+                result, activity_loss
+            )
             outputs.append(y_pred)
-            total_activity_loss = total_activity_loss + child_activity_loss
-        return outputs, total_activity_loss
+        return outputs, activity_loss
 
     def _predictf_sum(
         self,
@@ -166,17 +168,16 @@ class Parallel(MiniMLModel):
         rng_key: Array | None,
         mode: PredictMode,
         **predict_kwargs,
-    ) -> PredictKernelOutput:
-        outputs, total_activity_loss = self._iter_predictf(
+    ) -> "Array | PredictKernelOutput":
+        outputs, activity_loss = self._iter_predictf(
             X,
             buffer,
             rng_key=rng_key,
             mode=mode,
             **predict_kwargs,
         )
-        return PredictKernelOutput(
-            y_pred=jnp.sum(jnp.stack(outputs), axis=0),
-            activity_loss=total_activity_loss,
+        return MiniMLModel._with_activity_loss(
+            jnp.sum(jnp.stack(outputs), axis=0), activity_loss
         )
 
     def _predictf_concat(
@@ -186,17 +187,16 @@ class Parallel(MiniMLModel):
         rng_key: Array | None,
         mode: PredictMode,
         **predict_kwargs,
-    ) -> PredictKernelOutput:
-        outputs, total_activity_loss = self._iter_predictf(
+    ) -> "Array | PredictKernelOutput":
+        outputs, activity_loss = self._iter_predictf(
             X,
             buffer,
             rng_key=rng_key,
             mode=mode,
             **predict_kwargs,
         )
-        return PredictKernelOutput(
-            y_pred=jnp.concatenate(outputs, axis=self._concat_axis),
-            activity_loss=total_activity_loss,
+        return MiniMLModel._with_activity_loss(
+            jnp.concatenate(outputs, axis=self._concat_axis), activity_loss
         )
 
     def _predict_kernel(
@@ -206,7 +206,7 @@ class Parallel(MiniMLModel):
         rng_key: Array | None = None,
         mode: PredictMode = PredictMode.INFERENCE,
         **predict_kwargs,
-    ) -> PredictKernelOutput:
+    ) -> "Array | PredictKernelOutput":
         return self._predict_func(
             X,
             buffer,

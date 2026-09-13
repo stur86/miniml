@@ -10,7 +10,7 @@ import jax
 from jax import Array as JXArray
 import jax.numpy as jnp
 from numpy.typing import DTypeLike, NDArray
-from miniml.param import MiniMLError, _supported_types, MiniMLParamRef
+from miniml.param import MiniMLError, MiniMLParam, _supported_types, MiniMLParamRef
 from miniml.loss import LossFunction
 from miniml.optim.base import MiniMLOptimizer, MiniMLOptimResult
 from miniml.optim.scipy import ScipyOptimizer
@@ -60,11 +60,11 @@ class PredictKernelOutput:
 # Generic interface for something that has parameters
 @runtime_checkable
 class ParametrizedObject(Protocol):
-
     def _get_inner_params(self) -> list[MiniMLParamRef]: ...
 
 
 T = TypeVar("T", bound="MiniMLModel")
+
 
 class MiniMLModelPlan(Generic[T]):
     """A plan to create a MiniMLModel later."""
@@ -93,6 +93,7 @@ class MiniMLModelPlan(Generic[T]):
         """
         return self._model_cls(*self._args, **self._kwargs)  # type: ignore
 
+
 class MiniMLModel(ABC):
     """MiniML Model
 
@@ -119,15 +120,27 @@ class MiniMLModel(ABC):
     def __new__(cls: Type[T], *args, **kwargs) -> T:
         instance = super().__new__(cls)  # type: ignore
         # Store init arguments for saving/loading pickled
-        try:
-            instance._init_args = pickle.dumps({
-                "args": args,
-                "kwargs": kwargs,
-            })
-        except Exception:
-            # Any reason why pickling fails, just set to None
-            instance._init_args = None
+        instance._replace_init_args(*args, **kwargs)
         return instance
+
+    def _replace_init_args(self, *args: Any, **kwargs: Any) -> None:
+        """Record the arguments that ``load()`` rebuilds this model from.
+
+        They are stored as passed to the constructor.  A model that resolves an
+        argument into plain data while constructing itself can call this again to
+        store the data instead, so that loading it back does not depend on
+        rebuilding the original object.  The arguments must still describe the
+        same model.
+
+        Args:
+            *args: Positional arguments to record.
+            **kwargs: Keyword arguments to record.
+        """
+        try:
+            self._init_args = pickle.dumps({"args": args, "kwargs": kwargs})
+        except Exception:
+            # Any reason why pickling fails, just set to None: it only blocks save()
+            self._init_args = None
 
     def __init__(self, loss: LossFunction | None = None) -> None:
         """Construct a MiniML Model.
@@ -226,7 +239,7 @@ class MiniMLModel(ABC):
             list[str]: A list of parameter names.
         """
         return [p.path for p in self._params]
-    
+
     @property
     def loss_function(self) -> LossFunction | None:
         """Get the loss function of the model.
@@ -237,22 +250,41 @@ class MiniMLModel(ABC):
         return self._loss_f
 
     def bind(self) -> None:
-        """Bind the model parameters to a contiguous buffer."""
+        """Bind the model parameters to a contiguous buffer.
+
+        Binding is atomic: if any parameter can not be bound, the model is left
+        exactly as it was found, rather than holding an uninitialized buffer.
+
+        Raises:
+            MiniMLError: If the model parameters have not been initialized.
+            MiniMLError: If any parameter is already bound, e.g. because it is
+                shared with another model that owns it.
+        """
         if not hasattr(self, "_params"):
             raise MiniMLError(
                 "Model parameters have not been initialized; remember to call super().__init__() at the end of the constructor"
             )
 
-        if not self.bound:
+        buffer_created = not self.bound
+        if buffer_created:
             # Initialize buffers
             self._buffer = jnp.empty(self._buffer_size, dtype=jnp.dtype(self._dtype))
 
-        # Bind buffers to parameters
-        i0 = 0
-        for p in self._params:
-            p.param.bind(i0, self)
-            i0 += p.param.size
-            
+        # Bind buffers to parameters, rolling back if any of them fails
+        done: list[MiniMLParam] = []
+        try:
+            i0 = 0
+            for p in self._params:
+                p.param.bind(i0, self)
+                done.append(p.param)
+                i0 += p.param.size
+        except Exception:
+            for param in done:
+                param.unbind()
+            if buffer_created:
+                del self._buffer
+            raise
+
     def unbind(self) -> None:
         """Unbind the model parameters from the buffer."""
         if not self.bound:
@@ -363,24 +395,60 @@ class MiniMLModel(ABC):
 
     @staticmethod
     def _unpack_kernel_output(
-        result: "JXArray | PredictKernelOutput",
-    ) -> "tuple[JXArray, JXArray]":
+        result: JXArray | PredictKernelOutput,
+        activity_loss: JXArray | None = None,
+    ) -> tuple[JXArray, JXArray | None]:
         """Unpack a ``_predict_kernel`` return value into ``(y_pred, activity_loss)``.
 
-        ``activity_loss`` is always a JAX scalar array — ``jnp.zeros(())`` when
-        the result carries no activity loss, so callers can use it unconditionally.
+        ``activity_loss`` is ``None`` when neither ``result`` nor the passed in
+        accumulator carries one; no zero term is created in that case.  Pass the
+        running total as ``activity_loss`` to accumulate over several children::
+
+            activity_loss = None
+            for model in models:
+                result = model._predict_kernel(X, buffer)
+                X, activity_loss = MiniMLModel._unpack_kernel_output(
+                    result, activity_loss
+                )
 
         Args:
             result: The raw return value of ``_predict_kernel``.
+            activity_loss: An optional activity loss to add the one carried by
+                ``result`` to. Defaults to None.
 
         Returns:
             Tuple of ``(y_pred, activity_loss)`` where ``activity_loss`` is a
-            JAX scalar (zero if not present).
+            JAX scalar, or None if there is no activity loss at all.
         """
-        if isinstance(result, PredictKernelOutput):
-            al = result.activity_loss if result.activity_loss is not None else jnp.zeros((), dtype=result.y_pred.dtype)
-            return result.y_pred, al
-        return result, jnp.zeros((), dtype=result.dtype)
+        if not isinstance(result, PredictKernelOutput):
+            return result, activity_loss
+        if result.activity_loss is None:
+            return result.y_pred, activity_loss
+        if activity_loss is None:
+            return result.y_pred, result.activity_loss
+        return result.y_pred, activity_loss + result.activity_loss
+
+    @staticmethod
+    def _with_activity_loss(
+        y_pred: JXArray,
+        activity_loss: JXArray | None,
+    ) -> JXArray | PredictKernelOutput:
+        """Attach an activity loss to a prediction, if there is one to attach.
+
+        Returns the bare ``y_pred`` when ``activity_loss`` is None, so that models
+        which happen to carry no activity loss are indistinguishable from ones that
+        never produce any.
+
+        Args:
+            y_pred: The model's prediction array.
+            activity_loss: The activity loss to carry, if any.
+
+        Returns:
+            ``y_pred`` itself, or a :class:`PredictKernelOutput` wrapping both.
+        """
+        if activity_loss is None:
+            return y_pred
+        return PredictKernelOutput(y_pred=y_pred, activity_loss=activity_loss)
 
     @abstractmethod
     def _predict_kernel(
@@ -390,7 +458,7 @@ class MiniMLModel(ABC):
         rng_key: JXArray | None = None,
         mode: PredictMode = PredictMode.INFERENCE,
         **predict_kwargs: Any,
-    ) -> "JXArray | PredictKernelOutput":
+    ) -> JXArray | PredictKernelOutput:
         """Core prediction kernel used for both training and inference.
 
         Subclasses can branch on ``mode`` and optionally use ``rng_key``
@@ -421,7 +489,9 @@ class MiniMLModel(ABC):
         """
         if not hasattr(self, "_jit_predict_kernel"):
 
-            def _inference_kernel(X: JXArray, buffer: JXArray, **kwargs: Any) -> JXArray:
+            def _inference_kernel(
+                X: JXArray, buffer: JXArray, **kwargs: Any
+            ) -> JXArray:
                 result = self._predict_kernel(
                     X,
                     buffer=buffer,
@@ -523,13 +593,16 @@ class MiniMLModel(ABC):
                 **predict_kwargs,
             )
             y_pred, activity_loss = MiniMLModel._unpack_kernel_output(result)
-            return self.total_loss(y, y_pred, reg_lambda, buf_in) + active_reg_lambda * activity_loss
+            total = self.total_loss(y, y_pred, reg_lambda, buf_in)
+            if activity_loss is not None:
+                total = total + active_reg_lambda * activity_loss
+            return total
 
         p0 = self._buffer[p_mask]
 
         result = optimizer(_targ_fun, p0)
         self._buffer = self._buffer.at[p_mask].set(result.x_opt)
-        
+
         # Return result with updated x_opt pointing to full buffer
         return MiniMLOptimResult(
             x_opt=self._buffer,
@@ -558,7 +631,7 @@ class MiniMLModel(ABC):
                 "Model parameters have not been bound to buffers; can not save"
             )
         metadata = {"model_name": self.__class__.__name__}
-        
+
         save_args = {
             "buffer": self._buffer,
             "metadata": [metadata],
@@ -569,11 +642,8 @@ class MiniMLModel(ABC):
                     "Model initialization arguments could not be pickled; can not save full model. Consider using state_only=True."
                 )
             save_args["init"] = self._init_args
-        
-        np.savez_compressed(
-            filename,
-            **save_args
-        )
+
+        np.savez_compressed(filename, **save_args)
 
     @classmethod
     def load(cls: Type[T], filename: str | Path) -> T:
@@ -602,20 +672,20 @@ class MiniMLModel(ABC):
             raise MiniMLError(
                 f"Failed to load model using full state. Consider using manual initialization and load_state(). Original error:\n{e}"
             )
-    
+
     @classmethod
     def plan(cls: Type[T], *args: Any, **kwargs: Any) -> MiniMLModelPlan[T]:
         """Create a MiniMLModelPlan to create the model later.
-        
+
         Args:
             *args: Positional arguments for the model constructor.
             **kwargs: Keyword arguments for the model constructor.
         Returns:
             MiniMLModelPlan[T]: A plan to create the model later.
         """
-        
+
         return MiniMLModelPlan(cls, *args, **kwargs)
-    
+
     def load_state(self, filename: str | Path) -> None:
         """Load only the model parameters from a file
         created with state_only=True in save().
@@ -753,6 +823,221 @@ class MiniMLModel(ABC):
                     f"set_regularization_scale('{path}'): pattern matched parameter(s) but none have a regularizer.",
                     stacklevel=2,
                 )
+
+
+class InvertibleModel(ABC):
+    """Mixin interface for models that can be inverted.
+
+    A model that implements this interface can reverse its own ``predict()``
+    transformation through ``invert()``.  Subclasses must implement
+    ``_invert_kernel()`` with the same signature as ``_predict_kernel``,
+    but computing the inverse transformation instead.
+
+    Use it as a mixin alongside MiniMLModel::
+
+        class AffineCouplingLayer(InvertibleModel, MiniMLModel):
+            def _predict_kernel(self, ...): ...
+
+            def _invert_kernel(self, ...): ...
+    """
+
+    @abstractmethod
+    def _invert_kernel(
+        self,
+        Y: JXArray,
+        buffer: JXArray,
+        rng_key: JXArray | None = None,
+        mode: PredictMode = PredictMode.INFERENCE,
+        **invert_kwargs: Any,
+    ) -> "JXArray | PredictKernelOutput":
+        """Core inversion kernel used by ``invert()``.
+
+        Mirrors ``_predict_kernel`` but computes the inverse transformation.
+        May return either a plain ``JXArray`` or a :class:`PredictKernelOutput`.
+
+        Args:
+            Y: Input data in the model's output space.
+            buffer: Parameter buffer.
+            rng_key: Optional JAX random key for stochastic models.
+            mode: Prediction mode (training or inference).
+            **invert_kwargs: Additional keyword-only arguments.
+        """
+        raise NotImplementedError
+
+    def invert(self, Y: JXArray, **invert_kwargs: dict[str, Any]) -> JXArray:
+        """Invert the model transformation, recovering the input from its output.
+
+        Args:
+            Y (JXArray): Input data in the model's output space.
+            **invert_kwargs: Additional named arguments for inversion.
+
+        Returns:
+            JXArray: The recovered input.
+        """
+        if not hasattr(self, "_jit_invert_kernel"):
+
+            def _inference_invert(
+                Y: JXArray, buffer: JXArray, **kwargs: Any
+            ) -> JXArray:
+                result = self._invert_kernel(
+                    Y,
+                    buffer=buffer,
+                    rng_key=None,
+                    mode=PredictMode.INFERENCE,
+                    **kwargs,
+                )
+                y_pred, _ = MiniMLModel._unpack_kernel_output(result)
+                return y_pred
+
+            self._jit_invert_kernel = jax.jit(_inference_invert, inline=True)
+
+        return self._jit_invert_kernel(Y, buffer=self._buffer, **invert_kwargs)
+
+    def inverse_model(self) -> "InvertibleModel":
+        """Return a model that applies this one's inverse transformation.
+
+        The returned model shares this model's parameters instead of copying
+        them, so it always reflects the current parameter values, including
+        during and after a fit.  Inverting it returns the original model back.
+
+        Returns:
+            InvertibleModel: A view on this model with predict and invert
+            swapped.
+        """
+        return InverseModel(self)
+
+
+class SharedModel:
+    """A reference to a model whose parameters are owned somewhere else.
+
+    A ``MiniMLModel`` collects the parameters of every member that exposes
+    ``_get_inner_params``, so storing a model directly as a member makes the
+    holder a co-owner of its parameters.  Wrapping it here instead states that
+    the holder only *uses* the model: the wrapper reports no parameters of its
+    own, so the same model can be referenced from several places without being
+    counted, or bound, more than once.
+
+    The referenced model must still appear, in its own right, somewhere in the
+    tree that owns the buffer; otherwise its parameters are never bound.
+    """
+
+    _model: MiniMLModel
+
+    def __init__(self, model: MiniMLModel) -> None:
+        """Construct a reference to an externally owned model.
+
+        Args:
+            model (MiniMLModel): The model to refer to.
+        """
+        self._model = model
+
+    @property
+    def model(self) -> MiniMLModel:
+        """The referenced model."""
+        return self._model
+
+    def _get_inner_params(self) -> list[MiniMLParamRef]:
+        """No parameters: they belong to whoever owns the referenced model."""
+        return []
+
+
+class InverseModel(InvertibleModel, MiniMLModel):
+    """A view on an :class:`InvertibleModel` with predict and invert swapped.
+
+    It holds no parameters of its own — it reads those of the model it wraps,
+    through a :class:`SharedModel` reference — so it costs nothing to create and
+    it follows the wrapped model's parameters as they are fitted.  Build one with
+    ``model.inverse_model()``.
+
+    It can be used on its own, or placed in a container alongside the model it
+    inverts, e.g. to tie an encoder to its decoder::
+
+        layer = AffineCouplingLayer(4)
+        Stack([layer, layer.inverse_model()])  # the identity, for any parameters
+    """
+
+    def __init__(self, model: MiniMLModel) -> None:
+        """Construct the inverse view of an invertible model.
+
+        Args:
+            model (MiniMLModel): The model to invert.  It must also be an
+                InvertibleModel.
+
+        Raises:
+            MiniMLError: If the model is not an invertible MiniMLModel.
+        """
+        if not isinstance(model, InvertibleModel) or not isinstance(model, MiniMLModel):
+            raise MiniMLError(
+                "InverseModel can only wrap a MiniMLModel that is also an InvertibleModel"
+            )
+        self._inverted = SharedModel(model)
+        super().__init__(loss=model.loss_function)
+
+    @property
+    def inverted(self) -> MiniMLModel:
+        """The model being inverted."""
+        return self._inverted.model
+
+    @property
+    def _buffer(self) -> JXArray:  # type: ignore[override]
+        """The buffer of the wrapped model, which owns the parameters."""
+        return self.inverted._buffer
+
+    @_buffer.setter
+    def _buffer(self, buffer: JXArray) -> None:
+        self.inverted._buffer = buffer
+
+    def bind(self) -> None:
+        """Bind the wrapped model, which owns every parameter this view reads."""
+        self.inverted.bind()
+
+    def unbind(self) -> None:
+        """Unbind the wrapped model, which owns every parameter this view reads."""
+        self.inverted.unbind()
+
+    def inverse_model(self) -> "InvertibleModel":
+        """Return the wrapped model itself, rather than a view on a view."""
+        return self.inverted  # type: ignore[return-value]
+
+    def save(self, filename: str | Path, state_only: bool = False) -> None:
+        """Refuse to save: the parameters belong to the wrapped model.
+
+        Args:
+            filename (str | Path): Unused.
+            state_only (bool, optional): Unused. Defaults to False.
+
+        Raises:
+            MiniMLError: Always.  Save the wrapped model instead, and rebuild
+                the view from it with ``inverse_model()``.
+        """
+        raise MiniMLError(
+            "An InverseModel owns no parameters and can not be saved; save the "
+            "model it inverts instead, then call inverse_model() on it again"
+        )
+
+    def _predict_kernel(
+        self,
+        X: JXArray,
+        buffer: JXArray,
+        rng_key: JXArray | None = None,
+        mode: PredictMode = PredictMode.INFERENCE,
+        **predict_kwargs: Any,
+    ) -> JXArray | PredictKernelOutput:
+        return self.inverted._invert_kernel(  # type: ignore[attr-defined]
+            X, buffer, rng_key=rng_key, mode=mode, **predict_kwargs
+        )
+
+    def _invert_kernel(
+        self,
+        Y: JXArray,
+        buffer: JXArray,
+        rng_key: JXArray | None = None,
+        mode: PredictMode = PredictMode.INFERENCE,
+        **invert_kwargs: Any,
+    ) -> JXArray | PredictKernelOutput:
+        return self.inverted._predict_kernel(
+            Y, buffer, rng_key=rng_key, mode=mode, **invert_kwargs
+        )
 
 
 class MiniMLModelList:

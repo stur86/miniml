@@ -11,14 +11,18 @@ from typing import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 
+
 def _adam_grad_apply_weight_decay(grad, weight_decay, x):
     return grad + weight_decay * x
+
 
 def _adamw_grad_apply_weight_decay(grad, weight_decay, x):
     return grad  # Weight decay is applied separately in AdamW
 
+
 def _adam_update_step(update, weight_decay, x):
     return update  # Weight decay is applied inside the gradient in Adam
+
 
 def _adamw_update_step(update, weight_decay, x):
     return update + weight_decay * x  # Decoupled weight decay in AdamW
@@ -54,7 +58,7 @@ class AdamBaseOptimizer(MiniMLOptimizer):
     This class can implement classical Adam or decoupled-weight-decay AdamW
     behaviour depending on the ``decouple_weight_decay`` flag.
     """
-    
+
     # State persistence
     _persist: bool = False
     _state: AdamState | None = None
@@ -96,7 +100,8 @@ class AdamBaseOptimizer(MiniMLOptimizer):
         """
         # Default configuration: we need the Jacobian, nothing else
         config = OptimizationMethods.Config(
-            deriv_require=DerivRequire.JACOBIAN, join_jac_and_value=False, 
+            deriv_require=DerivRequire.JACOBIAN,
+            join_jac_and_value=False,
             ortho_grad=ortho_grad,
         )
         super().__init__(config)
@@ -108,14 +113,14 @@ class AdamBaseOptimizer(MiniMLOptimizer):
         self._tol = tol
         self._maxiter = maxiter
         self._decouple_weight_decay = decouple_weight_decay
-        
+
         if decouple_weight_decay:
             _grad_apply = _adamw_grad_apply_weight_decay
             _update_step = _adamw_update_step
         else:
             _grad_apply = _adam_grad_apply_weight_decay
             _update_step = _adam_update_step
-        
+
         def _update_impl(
             x: JxArray,
             m: JxArray,
@@ -139,9 +144,9 @@ class AdamBaseOptimizer(MiniMLOptimizer):
             update = _update_step(update, weight_decay, x)
             x = x - update
             return x, m, v
-        
+
         self._update_impl = _update_impl
-    
+
     def _clear_state(self) -> None:
         """Clear any persisted optimizer state."""
         self._state = None
@@ -169,7 +174,9 @@ class AdamBaseOptimizer(MiniMLOptimizer):
         return self._state
 
     def _minimize_kernel(
-        self, x0: JxArray, methods: OptimizationMethods,
+        self,
+        x0: JxArray,
+        methods: OptimizationMethods,
         seed: int | None = None,
     ) -> MiniMLOptimResult:
         n = x0.shape[0]
@@ -177,10 +184,10 @@ class AdamBaseOptimizer(MiniMLOptimizer):
         state = self._get_state(x)
         m = state.m
         v = state.v
-                
-        assert (
-            methods.jac is not None
-        ), "Jacobian function must be provided for Adam optimizer."
+
+        assert methods.jac is not None, (
+            "Jacobian function must be provided for Adam optimizer."
+        )
         gradfun = methods.jac
 
         def update_fn(x, m, v, t, update_key):
@@ -242,7 +249,7 @@ class AdamBaseOptimizer(MiniMLOptimizer):
         success = out_state[-1] > 0
         n_iters = int(out_state[-1]) if success else self._maxiter
         x_opt = out_state[:n]
-        
+
         if self._persist:
             # Save the optimizer state for future calls
             m_opt = out_state[n : 2 * n]
@@ -268,7 +275,7 @@ class AdamBaseOptimizer(MiniMLOptimizer):
             n_jacobian_evaluations=n_iters,
             n_hessian_evaluations=None,
         )
-    
+
     @contextmanager
     def persistent(self) -> Generator["AdamBaseOptimizer", None, None]:
         """Open a context in which optimizer state is persisted across multiple
@@ -304,7 +311,7 @@ class AdamOptimizer(AdamBaseOptimizer):
         maxiter: int = 1000,
     ) -> None:
         """Initialize the classical Adam optimizer.
-        
+
         !!! note
             Weight decay here is a way to implement L2 regularization,
             which is redundant compared to the use of reg_lambda in

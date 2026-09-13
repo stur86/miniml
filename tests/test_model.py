@@ -648,3 +648,49 @@ def test_set_regularization_scale_updates_loss():
     loss_after = float(m.regularization_loss())
     assert loss_after == pytest.approx(0.0)
     assert loss_before != pytest.approx(0.0)
+
+
+def test_bind_is_atomic():
+    """A failed bind must not leave the model holding an empty buffer."""
+
+    class M(NoOpModel):
+        def __init__(self):
+            self.p = MiniMLParam((3,))
+            super().__init__()
+
+    owner = M()
+    owner.bind()
+
+    # A second model sharing the same parameter object can not bind it
+    borrower = M()
+    borrower.p = owner.p
+    borrower._params = owner._params
+
+    with pytest.raises(MiniMLError, match="Parameter already bound to buffer"):
+        borrower.bind()
+    assert not borrower.bound
+    # The parameter is still bound to its original owner, untouched
+    assert owner.p.bound
+    assert owner.bound
+
+
+def test_bind_rolls_back_partial_binding():
+    """Parameters bound before the failing one are unbound again."""
+
+    class M(NoOpModel):
+        def __init__(self):
+            self.p1 = MiniMLParam((2,))
+            self.p2 = MiniMLParam((2,))
+            super().__init__()
+
+    owner = M()
+    borrower = M()
+    # Only the second parameter is shared, so the first one binds before failing
+    borrower.p2 = owner.p2
+    borrower._params[1] = owner._params[1]
+    owner.bind()
+
+    with pytest.raises(MiniMLError, match="Parameter already bound to buffer"):
+        borrower.bind()
+    assert not borrower.bound
+    assert not borrower.p1.bound

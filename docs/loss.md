@@ -120,4 +120,22 @@ During inference (`.predict()`), `activity_loss` is discarded; the model behaves
 !!! note
     It is strongly recommended to compute the `activity_loss` only when `mode == PredictMode.TRAINING`, as shown above. During inference the value is ignored, so computing it is a pure waste of time.
 
-When using `Stack` or `Parallel`, activity losses from all children are automatically summed and propagated upward, so composite models work without any extra effort. For manually written composite models that call children's `_predict_kernel` directly, use `MiniMLModel._unpack_kernel_output(result)` to safely extract `(y_pred, activity_loss)` from whatever the child returns.
+Returning a plain array is always acceptable: the framework accepts both return types and treats a missing `activity_loss` as no activity regularization at all. There is no need to wrap the output in a `PredictKernelOutput` with a zero loss.
+
+When using `Stack` or `Parallel`, activity losses from all children are automatically summed and propagated upward, so composite models work without any extra effort. If no child contributes an activity loss, the composite returns a plain array too.
+
+For manually written composite models that call children's `_predict_kernel` directly, two static helpers on `MiniMLModel` handle both return types:
+
+* `_unpack_kernel_output(result, activity_loss=None)` extracts `(y_pred, activity_loss)` from whatever the child returned, adding the child's loss to the optional running total passed in. The returned loss is `None` if there is none;
+* `_with_activity_loss(y_pred, activity_loss)` attaches the accumulated loss to the prediction, giving back the bare `y_pred` when `activity_loss` is `None`.
+
+Together they make the accumulation loop short:
+
+```python
+def _predict_kernel(self, X, buffer, rng_key=None, mode=PredictMode.INFERENCE, **kw):
+    activity_loss = None
+    for model in self._models:
+        result = model._predict_kernel(X, buffer, rng_key=rng_key, mode=mode, **kw)
+        X, activity_loss = MiniMLModel._unpack_kernel_output(result, activity_loss)
+    return MiniMLModel._with_activity_loss(X, activity_loss)
+```

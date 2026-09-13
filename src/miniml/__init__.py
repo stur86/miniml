@@ -1,12 +1,23 @@
-from miniml.param import MiniMLParam, MiniMLError, MiniMLParamList
-from miniml.model import MiniMLModel, MiniMLModelList, PredictMode, PredictKernelOutput
+from miniml.model import (
+    InverseModel,
+    InvertibleModel,
+    MiniMLModel,
+    MiniMLModelList,
+    PredictKernelOutput,
+    PredictMode,
+    SharedModel,
+)
+from miniml.param import MiniMLError, MiniMLParam, MiniMLParamList
 
 __all__ = [
-    "MiniMLParam",
-    "MiniMLParamList",
+    "InverseModel",
+    "InvertibleModel",
     "MiniMLError",
     "MiniMLModel",
     "MiniMLModelList",
-    "PredictMode",
+    "MiniMLParam",
+    "MiniMLParamList",
     "PredictKernelOutput",
+    "PredictMode",
+    "SharedModel",
 ]

@@ -14,6 +14,7 @@ ObjJacFunction = Callable[[JxArray, OptionalRngKey], tuple[JxArray, JxArray]]
 HessianProductFunction = Callable[[JxArray, JxArray, OptionalRngKey], JxArray]
 HessianFunction = Callable[[JxArray, OptionalRngKey], JxArray]
 
+
 class DerivRequire(Enum):
     """Enumeration of derivative requirements for the optimizer.
 
@@ -54,6 +55,7 @@ class MiniMLOptimResult:
     n_jacobian_evaluations: int | None = None
     n_hessian_evaluations: int | None = None
 
+
 def _get_ortho_component(grad: JxArray, w: JxArray) -> JxArray:
     w_norm_sq = jnp.sum(w * w)
     grad_ortho = jnp.where(
@@ -62,6 +64,7 @@ def _get_ortho_component(grad: JxArray, w: JxArray) -> JxArray:
         grad,
     )
     return grad_ortho
+
 
 @dataclass
 class OptimizationMethods:
@@ -95,10 +98,12 @@ class OptimizationMethods:
         deriv_require: DerivRequire = DerivRequire.JACOBIAN
         join_jac_and_value: bool = True
         ortho_grad: bool = False
-        
+
         def __post_init__(self) -> None:
             if self.deriv_require == DerivRequire.HESSIAN and self.ortho_grad:
-                raise ValueError("Orthogonalized gradients are not compatible with full Hessian computation.")
+                raise ValueError(
+                    "Orthogonalized gradients are not compatible with full Hessian computation."
+                )
 
     @classmethod
     def from_objective(
@@ -130,16 +135,20 @@ class OptimizationMethods:
                 if config.ortho_grad:
                     _obj_and_jac = obj_and_jac
 
-                    def obj_and_jac_ortho(x: JxArray, rng: OptionalRngKey = None) -> tuple[JxArray, JxArray]:
+                    def obj_and_jac_ortho(
+                        x: JxArray, rng: OptionalRngKey = None
+                    ) -> tuple[JxArray, JxArray]:
                         val, grad = _obj_and_jac(x, rng)
                         grad_ortho = _get_ortho_component(grad, x)
                         return val, grad_ortho
 
                     obj_and_jac = obj_and_jac_ortho
-                
+
                 obj_and_jac = jax.jit(obj_and_jac, inline=True)
-                
-            if (not config.join_jac_and_value) or (config.deriv_require == DerivRequire.HESSIAN_PRODUCT):
+
+            if (not config.join_jac_and_value) or (
+                config.deriv_require == DerivRequire.HESSIAN_PRODUCT
+            ):
                 jac = jax.jit(jax.grad(objective), inline=True)
                 if config.ortho_grad:
                     _jac_original = jac
@@ -152,7 +161,9 @@ class OptimizationMethods:
                     jac = jax.jit(jac_ortho, inline=True)
 
             if config.deriv_require == DerivRequire.HESSIAN_PRODUCT:
-                assert jac is not None, "Jacobian must be computed for Hessian-vector product"
+                assert jac is not None, (
+                    "Jacobian must be computed for Hessian-vector product"
+                )
 
                 _jac_hessp = jac
 
@@ -165,9 +176,7 @@ class OptimizationMethods:
                 hess = jax.hessian(objective)
                 hess = jax.jit(hess, inline=True)
 
-        return cls(
-            obj=obj, jac=jac, obj_and_jac=obj_and_jac, hessp=hessp, hess=hess
-        )
+        return cls(obj=obj, jac=jac, obj_and_jac=obj_and_jac, hessp=hessp, hess=hess)
 
 
 class MiniMLOptimizer(ABC):
@@ -185,8 +194,7 @@ class MiniMLOptimizer(ABC):
 
     @abstractmethod
     def _minimize_kernel(
-        self, x0: JxArray, methods: OptimizationMethods, 
-        seed: int | None = None
+        self, x0: JxArray, methods: OptimizationMethods, seed: int | None = None
     ) -> MiniMLOptimResult:
         """Execute the optimization kernel.
 

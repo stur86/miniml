@@ -67,7 +67,7 @@ def test_unpack_plain_array():
     arr = jnp.array([1.0, 2.0])
     y_pred, al = MiniMLModel._unpack_kernel_output(arr)
     assert (y_pred == arr).all()
-    assert jnp.isclose(al, 0.0)
+    assert al is None
 
 
 def test_unpack_predict_kernel_output_with_loss():
@@ -84,7 +84,30 @@ def test_unpack_predict_kernel_output_no_loss():
     out = PredictKernelOutput(y_pred=y, activity_loss=None)
     y_pred, al = MiniMLModel._unpack_kernel_output(out)
     assert (y_pred == y).all()
-    assert jnp.isclose(al, 0.0)
+    assert al is None
+
+
+def test_unpack_accumulates_activity_loss():
+    """Passing a running total in adds the result's own loss to it."""
+    y = jnp.array([1.0, 2.0])
+    out = PredictKernelOutput(y_pred=y, activity_loss=jnp.array(1.5))
+    _, al = MiniMLModel._unpack_kernel_output(out, jnp.array(2.0))
+    assert al is not None
+    assert jnp.isclose(al, 3.5)
+    # A result with no loss leaves the running total untouched
+    _, al = MiniMLModel._unpack_kernel_output(y, al)
+    assert al is not None
+    assert jnp.isclose(al, 3.5)
+
+
+def test_with_activity_loss():
+    """No activity loss means no wrapper object at all."""
+    y = jnp.array([1.0, 2.0])
+    assert MiniMLModel._with_activity_loss(y, None) is y
+    out = MiniMLModel._with_activity_loss(y, jnp.array(0.5))
+    assert isinstance(out, PredictKernelOutput)
+    assert out.activity_loss is not None
+    assert jnp.isclose(out.activity_loss, 0.5)
 
 
 # ---------------------------------------------------------------------------
@@ -229,14 +252,14 @@ def test_stack_accumulates_activity_loss():
     assert jnp.isclose(result.activity_loss, 5.0)  # 2.0 + 3.0
 
 
-def test_stack_no_activity_returns_zero_loss():
+def test_stack_no_activity_returns_plain_array():
+    """With no activity loss to carry, the Stack returns a bare array."""
     stack = Stack([_PassthroughNoActivity(), _PassthroughNoActivity()])
     stack.bind()
     X = jnp.ones((4,))
     result = stack._predict_kernel(X, stack._buffer, mode=PredictMode.TRAINING)
-    assert isinstance(result, PredictKernelOutput)
-    assert result.activity_loss is not None
-    assert jnp.isclose(result.activity_loss, 0.0)
+    assert isinstance(result, JXArray)
+    assert (result == X).all()
 
 
 def test_stack_predict_ignores_activity_loss():
@@ -279,14 +302,14 @@ def test_parallel_concat_accumulates_activity_loss():
     assert jnp.isclose(result.activity_loss, 4.0)  # 1.0 + 3.0
 
 
-def test_parallel_no_activity_returns_zero_loss():
+def test_parallel_no_activity_returns_plain_array():
+    """With no activity loss to carry, the Parallel returns a bare array."""
     parallel = Parallel([_PassthroughNoActivity(), _PassthroughNoActivity()], mode="sum")
     parallel.bind()
     X = jnp.ones((4,))
     result = parallel._predict_kernel(X, parallel._buffer, mode=PredictMode.TRAINING)
-    assert isinstance(result, PredictKernelOutput)
-    assert result.activity_loss is not None
-    assert jnp.isclose(result.activity_loss, 0.0)
+    assert isinstance(result, JXArray)
+    assert (result == 2.0 * X).all()
 
 
 # ---------------------------------------------------------------------------
