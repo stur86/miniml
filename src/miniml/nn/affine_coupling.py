@@ -132,41 +132,34 @@ class AffineCouplingLayer(InvertibleModel, MiniMLModel):
         rng_key: JXArray | None,
         mode: PredictMode,
         predict_kwargs: dict,
-    ) -> "tuple[JXArray, JXArray, JXArray]":
+    ) -> "tuple[JXArray, JXArray, JXArray | None]":
         """Compute (q, p, activity_loss) for the coupling transformation.
 
         q is the strictly positive scale, p is the translation, both computed
-        from the unchanged input set ``X_in``.
+        from the unchanged input set ``X_in``.  The activity loss is the sum of
+        the two MLPs' own losses, or None if neither carries one.
         """
-        total_activity_loss = jnp.zeros((), dtype=self._dtype)
+        activity_loss: JXArray | None = None
+        values: list[JXArray] = []
 
-        rng_key, q_key = (
-            jax.random.split(rng_key) if rng_key is not None else (None, None)
-        )
-        q_result = self._mlp_q._predict_kernel(
-            X_in,
-            buffer,
-            rng_key=q_key,
-            mode=mode,
-            **predict_kwargs,
-        )
-        q, activity_loss = MiniMLModel._unpack_kernel_output(q_result)
-        total_activity_loss = total_activity_loss + activity_loss
+        for mlp in (self._mlp_q, self._mlp_p):
+            rng_key, subkey = (
+                jax.random.split(rng_key) if rng_key is not None else (None, None)
+            )
+            result = mlp._predict_kernel(
+                X_in,
+                buffer,
+                rng_key=subkey,
+                mode=mode,
+                **predict_kwargs,
+            )
+            value, activity_loss = MiniMLModel._unpack_kernel_output(
+                result, activity_loss
+            )
+            values.append(value)
 
-        rng_key, p_key = (
-            jax.random.split(rng_key) if rng_key is not None else (None, None)
-        )
-        p_result = self._mlp_p._predict_kernel(
-            X_in,
-            buffer,
-            rng_key=p_key,
-            mode=mode,
-            **predict_kwargs,
-        )
-        p, activity_loss = MiniMLModel._unpack_kernel_output(p_result)
-        total_activity_loss = total_activity_loss + activity_loss
-
-        return jnp.exp(q), p, total_activity_loss
+        q, p = values
+        return jnp.exp(q), p, activity_loss
 
     def _predict_kernel(
         self,
@@ -175,7 +168,7 @@ class AffineCouplingLayer(InvertibleModel, MiniMLModel):
         rng_key: JXArray | None = None,
         mode: PredictMode = PredictMode.INFERENCE,
         **predict_kwargs,
-    ) -> PredictKernelOutput:
+    ) -> "JXArray | PredictKernelOutput":
         X_t = X[..., self._target_indices]
         X_in = X[..., self._input_indices]
         q, p, activity_loss = self._coupling_values(
@@ -183,7 +176,7 @@ class AffineCouplingLayer(InvertibleModel, MiniMLModel):
         )
         Y_t = X_t * q + p
         Y = X.at[..., self._target_indices].set(Y_t)
-        return PredictKernelOutput(y_pred=Y, activity_loss=activity_loss)
+        return MiniMLModel._with_activity_loss(Y, activity_loss)
 
     def _invert_kernel(
         self,
@@ -192,7 +185,7 @@ class AffineCouplingLayer(InvertibleModel, MiniMLModel):
         rng_key: JXArray | None = None,
         mode: PredictMode = PredictMode.INFERENCE,
         **invert_kwargs,
-    ) -> PredictKernelOutput:
+    ) -> "JXArray | PredictKernelOutput":
         Y_t = Y[..., self._target_indices]
         X_in = Y[..., self._input_indices]
         q, p, activity_loss = self._coupling_values(
@@ -200,4 +193,4 @@ class AffineCouplingLayer(InvertibleModel, MiniMLModel):
         )
         X_t = (Y_t - p) / q
         X = Y.at[..., self._target_indices].set(X_t)
-        return PredictKernelOutput(y_pred=X, activity_loss=activity_loss)
+        return MiniMLModel._with_activity_loss(X, activity_loss)

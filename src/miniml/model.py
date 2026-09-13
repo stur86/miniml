@@ -367,27 +367,60 @@ class MiniMLModel(ABC):
     @staticmethod
     def _unpack_kernel_output(
         result: "JXArray | PredictKernelOutput",
-    ) -> "tuple[JXArray, JXArray]":
+        activity_loss: "JXArray | None" = None,
+    ) -> "tuple[JXArray, JXArray | None]":
         """Unpack a ``_predict_kernel`` return value into ``(y_pred, activity_loss)``.
 
-        ``activity_loss`` is always a JAX scalar array — ``jnp.zeros(())`` when
-        the result carries no activity loss, so callers can use it unconditionally.
+        ``activity_loss`` is ``None`` when neither ``result`` nor the passed in
+        accumulator carries one; no zero term is created in that case.  Pass the
+        running total as ``activity_loss`` to accumulate over several children::
+
+            activity_loss = None
+            for model in models:
+                result = model._predict_kernel(X, buffer)
+                X, activity_loss = MiniMLModel._unpack_kernel_output(
+                    result, activity_loss
+                )
 
         Args:
             result: The raw return value of ``_predict_kernel``.
+            activity_loss: An optional activity loss to add the one carried by
+                ``result`` to. Defaults to None.
 
         Returns:
             Tuple of ``(y_pred, activity_loss)`` where ``activity_loss`` is a
-            JAX scalar (zero if not present).
+            JAX scalar, or None if there is no activity loss at all.
         """
-        if isinstance(result, PredictKernelOutput):
-            al = (
-                result.activity_loss
-                if result.activity_loss is not None
-                else jnp.zeros((), dtype=result.y_pred.dtype)
-            )
-            return result.y_pred, al
-        return result, jnp.zeros((), dtype=result.dtype)
+        if not isinstance(result, PredictKernelOutput):
+            return result, activity_loss
+        if result.activity_loss is None:
+            return result.y_pred, activity_loss
+        if activity_loss is None:
+            return result.y_pred, result.activity_loss
+        return result.y_pred, activity_loss + result.activity_loss
+
+    @staticmethod
+    def _with_activity_loss(
+        y_pred: JXArray,
+        activity_loss: "JXArray | None" = None,
+    ) -> "JXArray | PredictKernelOutput":
+        """Attach an activity loss to a prediction, if there is one to attach.
+
+        Returns the bare ``y_pred`` when ``activity_loss`` is None, so that models
+        which happen to carry no activity loss are indistinguishable from ones that
+        never produce any.
+
+        Args:
+            y_pred: The model's prediction array.
+            activity_loss: The activity loss to carry, if any. Defaults to None,
+                i.e. no activity loss.
+
+        Returns:
+            ``y_pred`` itself, or a :class:`PredictKernelOutput` wrapping both.
+        """
+        if activity_loss is None:
+            return y_pred
+        return PredictKernelOutput(y_pred=y_pred, activity_loss=activity_loss)
 
     @abstractmethod
     def _predict_kernel(
@@ -532,10 +565,10 @@ class MiniMLModel(ABC):
                 **predict_kwargs,
             )
             y_pred, activity_loss = MiniMLModel._unpack_kernel_output(result)
-            return (
-                self.total_loss(y, y_pred, reg_lambda, buf_in)
-                + active_reg_lambda * activity_loss
-            )
+            total = self.total_loss(y, y_pred, reg_lambda, buf_in)
+            if activity_loss is not None:
+                total = total + active_reg_lambda * activity_loss
+            return total
 
         p0 = self._buffer[p_mask]
 
@@ -825,9 +858,8 @@ class InvertibleModel(ABC):
                     mode=PredictMode.INFERENCE,
                     **kwargs,
                 )
-                if isinstance(result, PredictKernelOutput):
-                    return result.y_pred
-                return result
+                y_pred, _ = MiniMLModel._unpack_kernel_output(result)
+                return y_pred
 
             self._jit_invert_kernel = jax.jit(_inference_invert, inline=True)
 

@@ -75,7 +75,7 @@ class MLP(MiniMLModel):
         rng_key: JXArray | None = None,
         mode: PredictMode = PredictMode.INFERENCE,
         **predict_kwargs,
-    ) -> PredictKernelOutput:
+    ) -> "JXArray | PredictKernelOutput":
         return self._layer_stack._predict_kernel(
             X,
             buffer,
