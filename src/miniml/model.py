@@ -764,6 +764,76 @@ class MiniMLModel(ABC):
                 )
 
 
+class InvertibleModel(ABC):
+    """Mixin interface for models that can be inverted.
+
+    A model that implements this interface can reverse its own ``predict()``
+    transformation through ``invert()``.  Subclasses must implement
+    ``_invert_kernel()`` with the same signature as ``_predict_kernel``,
+    but computing the inverse transformation instead.
+
+    Use it as a mixin alongside MiniMLModel::
+
+        class AffineCouplingLayer(InvertibleModel, MiniMLModel):
+            def _predict_kernel(self, ...): ...
+
+            def _invert_kernel(self, ...): ...
+    """
+
+    @abstractmethod
+    def _invert_kernel(
+        self,
+        Y: JXArray,
+        buffer: JXArray,
+        rng_key: JXArray | None = None,
+        mode: PredictMode = PredictMode.INFERENCE,
+        **invert_kwargs: Any,
+    ) -> "JXArray | PredictKernelOutput":
+        """Core inversion kernel used by ``invert()``.
+
+        Mirrors ``_predict_kernel`` but computes the inverse transformation.
+        May return either a plain ``JXArray`` or a :class:`PredictKernelOutput`.
+
+        Args:
+            Y: Input data in the model's output space.
+            buffer: Parameter buffer.
+            rng_key: Optional JAX random key for stochastic models.
+            mode: Prediction mode (training or inference).
+            **invert_kwargs: Additional keyword-only arguments.
+        """
+        raise NotImplementedError
+
+    def invert(self, Y: JXArray, **invert_kwargs: dict[str, Any]) -> JXArray:
+        """Invert the model transformation, recovering the input from its output.
+
+        Args:
+            Y (JXArray): Input data in the model's output space.
+            **invert_kwargs: Additional named arguments for inversion.
+
+        Returns:
+            JXArray: The recovered input.
+        """
+        if not hasattr(self, "_jit_invert_kernel"):
+
+            def _inference_invert(
+                Y: JXArray, buffer: JXArray, **kwargs: Any
+            ) -> JXArray:
+                result = self._invert_kernel(
+                    Y,
+                    buffer=buffer,
+                    rng_key=None,
+                    mode=PredictMode.INFERENCE,
+                    **kwargs,
+                )
+                if isinstance(result, PredictKernelOutput):
+                    return result.y_pred
+                return result
+
+            self._jit_invert_kernel = jax.jit(_inference_invert, inline=True)
+
+        return self._jit_invert_kernel(Y, buffer=self._buffer, **invert_kwargs)
+
+
 class MiniMLModelList:
     """A list of MiniMLModels."""
 
