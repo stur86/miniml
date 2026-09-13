@@ -13,7 +13,7 @@ from miniml.optim.base import (
 
 class ScipyOptimizer(MiniMLOptimizer):
     """Optimizer that wraps scipy.optimize.minimize and supports the following methods:
-    
+
     - 'Nelder-Mead'
     - 'Powell'
     - 'CG'
@@ -46,7 +46,7 @@ class ScipyOptimizer(MiniMLOptimizer):
         tol: float | None = None,
     ) -> None:
         """Initialize the ScipyOptimizer.
-        
+
         Args:
             method (str, optional): The optimization method to use. Defaults to 'L-BFGS-B'.
             options (dict, optional): Options to pass to scipy.optimize.minimize. Defaults to {}.
@@ -97,8 +97,11 @@ class ScipyOptimizer(MiniMLOptimizer):
         prng_key: JxArray | None = None
         if seed is not None:
             prng_key = jax.random.PRNGKey(seed)
-            warnings.warn("ScipyOptimizer does not support modifying the random seed during optimization; the seed will be the same in all iterations."
-                          " If stochastic behavior is desired, consider using a different optimizer.", UserWarning)
+            warnings.warn(
+                "ScipyOptimizer does not support modifying the random seed during optimization; the seed will be the same in all iterations."
+                " If stochastic behavior is desired, consider using a different optimizer.",
+                UserWarning,
+            )
 
         result = minimize(
             fun=methods.obj_and_jac if self._config.join_jac_and_value else methods.obj,

@@ -14,7 +14,6 @@ ProjectionType = Literal["none", "scaling", "ortho", "full"]
 
 
 class RBFLayer(MiniMLModel):
-
     _rbf: RBFunction
     _X0: MiniMLParam
     _s: MiniMLParam

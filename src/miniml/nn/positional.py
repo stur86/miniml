@@ -3,6 +3,7 @@ import jax.numpy as jnp
 from miniml.model import MiniMLModel, PredictMode
 from miniml.param import MiniMLParam
 
+
 class PositionalEmbedding(MiniMLModel):
     """A MiniML model that adds positional embeddings to input sequences."""
 
@@ -34,7 +35,9 @@ class PositionalEmbedding(MiniMLModel):
         pos_embd = self._pos_embeddings(buffer)
         seq_length = X.shape[1]
         if seq_length > self._max_length:
-            raise ValueError(f"Input sequence length {seq_length} exceeds maximum length {self._max_length}")
+            raise ValueError(
+                f"Input sequence length {seq_length} exceeds maximum length {self._max_length}"
+            )
         return X + pos_embd[:seq_length, :]
 
     @property
@@ -46,7 +49,8 @@ class PositionalEmbedding(MiniMLModel):
     def dim(self) -> int:
         """Dimensionality of the embedding vectors."""
         return self._dim
-    
+
+
 class RotaryPositionalEmbedding(MiniMLModel):
     """A MiniML model that applies rotary positional embeddings to input sequences."""
 
@@ -60,14 +64,14 @@ class RotaryPositionalEmbedding(MiniMLModel):
         """
         if dim <= 0:
             raise ValueError("dim must be a positive integer")
-        if dim%2 != 0:
+        if dim % 2 != 0:
             raise ValueError("dim must be an even integer for rotary embeddings")
         if rot_length <= 0:
             raise ValueError("rot_length must be a positive integer")
 
         self._dim = dim
         self._rot_length = rot_length
-        
+
         # Precalculate the positional embeddings
         max_length = rot_length
         position_ids = jnp.arange(max_length)[:, None]
@@ -76,7 +80,6 @@ class RotaryPositionalEmbedding(MiniMLModel):
         angle_rads = position_ids * angle_rates
         self._sin_embeddings = jnp.sin(angle_rads)
         self._cos_embeddings = jnp.cos(angle_rads)
-
 
         super().__init__()
 

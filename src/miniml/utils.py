@@ -5,7 +5,6 @@ VT = TypeVar("VT")
 
 
 class ImmutableBiDict(Generic[KT, VT]):
-
     def __init__(self, values: list[tuple[KT, VT]]) -> None:
         self._fwd: dict[KT, VT] = {}
         self._bwd: dict[VT, KT] = {}

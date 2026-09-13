@@ -60,11 +60,11 @@ class PredictKernelOutput:
 # Generic interface for something that has parameters
 @runtime_checkable
 class ParametrizedObject(Protocol):
-
     def _get_inner_params(self) -> list[MiniMLParamRef]: ...
 
 
 T = TypeVar("T", bound="MiniMLModel")
+
 
 class MiniMLModelPlan(Generic[T]):
     """A plan to create a MiniMLModel later."""
@@ -93,6 +93,7 @@ class MiniMLModelPlan(Generic[T]):
         """
         return self._model_cls(*self._args, **self._kwargs)  # type: ignore
 
+
 class MiniMLModel(ABC):
     """MiniML Model
 
@@ -120,10 +121,12 @@ class MiniMLModel(ABC):
         instance = super().__new__(cls)  # type: ignore
         # Store init arguments for saving/loading pickled
         try:
-            instance._init_args = pickle.dumps({
-                "args": args,
-                "kwargs": kwargs,
-            })
+            instance._init_args = pickle.dumps(
+                {
+                    "args": args,
+                    "kwargs": kwargs,
+                }
+            )
         except Exception:
             # Any reason why pickling fails, just set to None
             instance._init_args = None
@@ -226,7 +229,7 @@ class MiniMLModel(ABC):
             list[str]: A list of parameter names.
         """
         return [p.path for p in self._params]
-    
+
     @property
     def loss_function(self) -> LossFunction | None:
         """Get the loss function of the model.
@@ -252,7 +255,7 @@ class MiniMLModel(ABC):
         for p in self._params:
             p.param.bind(i0, self)
             i0 += p.param.size
-            
+
     def unbind(self) -> None:
         """Unbind the model parameters from the buffer."""
         if not self.bound:
@@ -378,7 +381,11 @@ class MiniMLModel(ABC):
             JAX scalar (zero if not present).
         """
         if isinstance(result, PredictKernelOutput):
-            al = result.activity_loss if result.activity_loss is not None else jnp.zeros((), dtype=result.y_pred.dtype)
+            al = (
+                result.activity_loss
+                if result.activity_loss is not None
+                else jnp.zeros((), dtype=result.y_pred.dtype)
+            )
             return result.y_pred, al
         return result, jnp.zeros((), dtype=result.dtype)
 
@@ -421,7 +428,9 @@ class MiniMLModel(ABC):
         """
         if not hasattr(self, "_jit_predict_kernel"):
 
-            def _inference_kernel(X: JXArray, buffer: JXArray, **kwargs: Any) -> JXArray:
+            def _inference_kernel(
+                X: JXArray, buffer: JXArray, **kwargs: Any
+            ) -> JXArray:
                 result = self._predict_kernel(
                     X,
                     buffer=buffer,
@@ -523,13 +532,16 @@ class MiniMLModel(ABC):
                 **predict_kwargs,
             )
             y_pred, activity_loss = MiniMLModel._unpack_kernel_output(result)
-            return self.total_loss(y, y_pred, reg_lambda, buf_in) + active_reg_lambda * activity_loss
+            return (
+                self.total_loss(y, y_pred, reg_lambda, buf_in)
+                + active_reg_lambda * activity_loss
+            )
 
         p0 = self._buffer[p_mask]
 
         result = optimizer(_targ_fun, p0)
         self._buffer = self._buffer.at[p_mask].set(result.x_opt)
-        
+
         # Return result with updated x_opt pointing to full buffer
         return MiniMLOptimResult(
             x_opt=self._buffer,
@@ -558,7 +570,7 @@ class MiniMLModel(ABC):
                 "Model parameters have not been bound to buffers; can not save"
             )
         metadata = {"model_name": self.__class__.__name__}
-        
+
         save_args = {
             "buffer": self._buffer,
             "metadata": [metadata],
@@ -569,11 +581,8 @@ class MiniMLModel(ABC):
                     "Model initialization arguments could not be pickled; can not save full model. Consider using state_only=True."
                 )
             save_args["init"] = self._init_args
-        
-        np.savez_compressed(
-            filename,
-            **save_args
-        )
+
+        np.savez_compressed(filename, **save_args)
 
     @classmethod
     def load(cls: Type[T], filename: str | Path) -> T:
@@ -602,20 +611,20 @@ class MiniMLModel(ABC):
             raise MiniMLError(
                 f"Failed to load model using full state. Consider using manual initialization and load_state(). Original error:\n{e}"
             )
-    
+
     @classmethod
     def plan(cls: Type[T], *args: Any, **kwargs: Any) -> MiniMLModelPlan[T]:
         """Create a MiniMLModelPlan to create the model later.
-        
+
         Args:
             *args: Positional arguments for the model constructor.
             **kwargs: Keyword arguments for the model constructor.
         Returns:
             MiniMLModelPlan[T]: A plan to create the model later.
         """
-        
+
         return MiniMLModelPlan(cls, *args, **kwargs)
-    
+
     def load_state(self, filename: str | Path) -> None:
         """Load only the model parameters from a file
         created with state_only=True in save().

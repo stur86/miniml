@@ -10,7 +10,6 @@ LossFunction = Callable[[JXArray, JXArray], JXArray]
 
 
 class LossFunctionBase(ABC):
-
     @abstractmethod
     def __call__(self, y_true: JXArray, y_pred: JXArray) -> JXArray:
         """Compute the loss between true and predicted values."""
@@ -18,7 +17,6 @@ class LossFunctionBase(ABC):
 
 
 class RegLossFunctionBase(ABC):
-
     @abstractmethod
     def __call__(self, y: JXArray) -> JXArray:
         """Compute the regularization loss for the given values."""
@@ -78,6 +76,7 @@ def stablemax(y: JXArray) -> JXArray:
     ans = ans / jnp.sum(ans, axis=-1, keepdims=True)
     return ans
 
+
 def log_stablemax(y: JXArray, epsilon: float = 1e-12) -> JXArray:
     r"""Compute the log of the StableMax transformation for numerical stability.
 
@@ -93,6 +92,7 @@ def log_stablemax(y: JXArray, epsilon: float = 1e-12) -> JXArray:
     log_s_x = jnp.log(s_x)
     log_sum_s_x = jnp.log(jnp.sum(s_x, axis=-1, keepdims=True))
     return log_s_x - log_sum_s_x
+
 
 class CrossEntropyLogLoss(LossFunctionBase):
     r"""Compute the cross-entropy loss between true and predicted values,
@@ -117,7 +117,7 @@ class CrossEntropyLogLoss(LossFunctionBase):
         """
         self.zero_ref = zero_ref
         self.expect_labels = expect_labels
-        
+
     def _normalize_logits(self, log_y_pred: JXArray) -> JXArray:
         return log_softmax(log_y_pred, axis=-1)
 
@@ -135,8 +135,12 @@ class CrossEntropyLogLoss(LossFunctionBase):
             return -jnp.sum(y_true * log_y_pred)
         else:
             if y_true.ndim != log_y_pred.ndim - 1:
-                raise ValueError("y_true must have one less dimension than log_y_pred when expect_labels is True.")
-            return  -jnp.take_along_axis(log_y_pred, y_true.astype(jnp.int32)[..., None], axis=-1).sum()
+                raise ValueError(
+                    "y_true must have one less dimension than log_y_pred when expect_labels is True."
+                )
+            return -jnp.take_along_axis(
+                log_y_pred, y_true.astype(jnp.int32)[..., None], axis=-1
+            ).sum()
 
 
 class CrossEntropyStableMaxLogLoss(CrossEntropyLogLoss):
@@ -144,7 +148,7 @@ class CrossEntropyStableMaxLogLoss(CrossEntropyLogLoss):
     using the 'StableMax' in place of softmax for numerical stability.
     See [L. Prieto et al., 2025](https://arxiv.org/abs/2501.04697) for details.
     """
-    
+
     def _normalize_logits(self, log_y_pred: JXArray) -> JXArray:
         return log_stablemax(log_y_pred)
 

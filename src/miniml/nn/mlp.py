@@ -1,27 +1,29 @@
+import jax.numpy as jnp
 from jax import Array as JXArray
-from miniml.model import MiniMLModel, PredictMode
+
 from miniml.loss import (
-    RegLossFunction,
     LNormRegularization,
     LossFunction,
+    RegLossFunction,
     squared_error_loss,
 )
-from miniml.param import MiniMLError, DTypeLike
-import jax.numpy as jnp
-from miniml.nn.activations import relu, ActivationFunction, Activation
-from miniml.nn.linear import Linear
+from miniml.model import MiniMLModel, PredictKernelOutput, PredictMode
+from miniml.nn.activations import Activation, ActivationFunction, relu
 from miniml.nn.compose import Stack
 from miniml.nn.dropout import Dropout
+from miniml.nn.linear import Linear
+from miniml.param import DTypeLike, MiniMLError
 
 
 class MLP(MiniMLModel):
+    _REG_LOSS_DEFAULT = LNormRegularization(2)
 
     def __init__(
         self,
         layer_sizes: list[int],
         activation: ActivationFunction = relu,
         loss: LossFunction = squared_error_loss,
-        reg_loss: RegLossFunction = LNormRegularization(2),
+        reg_loss: RegLossFunction = _REG_LOSS_DEFAULT,
         dropout: float = 0.0,
         dtype: DTypeLike = jnp.float32,
     ) -> None:
@@ -73,7 +75,7 @@ class MLP(MiniMLModel):
         rng_key: JXArray | None = None,
         mode: PredictMode = PredictMode.INFERENCE,
         **predict_kwargs,
-    ) -> JXArray:
+    ) -> PredictKernelOutput:
         return self._layer_stack._predict_kernel(
             X,
             buffer,

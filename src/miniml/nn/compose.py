@@ -29,6 +29,7 @@ class Identity(MiniMLModel):
     ) -> Array:
         return X * self._scale
 
+
 class Take(MiniMLModel):
     """A MiniML model that takes specific indices from the input array along a given axis."""
 
@@ -53,6 +54,7 @@ class Take(MiniMLModel):
         **predict_kwargs,
     ) -> Array:
         return jnp.take(X, indices=self._indices, axis=self._axis)
+
 
 class Stack(MiniMLModel):
     """A MiniML model that stacks multiple MiniML models sequentially."""
@@ -132,7 +134,7 @@ class Parallel(MiniMLModel):
             raise ValueError(f"Invalid mode '{mode}'. Choose 'sum' or 'concat'.")
 
         super().__init__(loss=loss)
-        
+
     def _iter_predictf(
         self,
         X: Array,
