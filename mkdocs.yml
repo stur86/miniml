@@ -33,6 +33,7 @@ nav:
   - containers.md
   - nn.md
   - composite_models.md
+  - invertible.md
 
 plugins:
 - search
